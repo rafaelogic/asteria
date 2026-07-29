@@ -68,6 +68,10 @@ export function maintenanceRequiresSource(body: string) {
   return /\b(analy[sz]e|inspect|diagnose|debug|edit|change|modify|implement|fix|repair|test|build|package|reinstall|stage|source|code|repository|repo)\b/i.test(body);
 }
 
+export function maintenanceRequiresPreview(body: string) {
+  return /\b(visual|preview|browser|renderer|screenshot|ui|user interface|layout|responsive)\b/i.test(body);
+}
+
 export function decideChatCommand(project: Project, command: RaDioChatCommand) {
   if (command.status === "denied") return command;
   const external = command.kind === "staging" || command.kind === "install";

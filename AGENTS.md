@@ -2,6 +2,7 @@
 
 Run the local server yourself and open the preview in the browser available to this environment. Do not give the user server-start instructions when you can run it.
 If a provider cannot bind a preview listener, reuse an existing listener only after identifying it and successfully loading the expected application. Report build checks and visual preview verification as separate results.
+Preview listeners for RaDio and Stars are owned by Asteria's trusted Electron host, never by weakening the provider sandbox. Bind only to loopback, verify the expected application identity, capture isolated renderer evidence, and stop the preview with its agent session.
 
 When an edit fails because its expected file context is stale, reread the current target region and retry with the smallest stable anchored change. Do not repeat the stale patch or treat a context mismatch as read-only access.
 

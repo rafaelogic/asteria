@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { maintenanceRequiresSource } from "../electron/radio/supervisor";
+import { maintenanceRequiresPreview, maintenanceRequiresSource } from "../electron/radio/supervisor";
 import { MaintenanceSendSchema, MaintenanceSourceSchema } from "../electron/contracts";
 import { improveMaintenancePrompt } from "../src/screens/MaintenanceRadioScreen";
 
 describe("Maintenance RaDio context", () => {
+  it("routes visual verification through the trusted host preview", () => {
+    for (const request of ["verify the visual preview", "check the UI layout", "take a browser screenshot"]) {
+      expect(maintenanceRequiresPreview(request)).toBe(true);
+    }
+    expect(maintenanceRequiresPreview("run the production build")).toBe(false);
+  });
+
   it("allows application status and reports without source access", () => {
     expect(maintenanceRequiresSource("What is the installed version and rollback readiness?")).toBe(false);
     expect(maintenanceRequiresSource("Summarize current health incidents and reports")).toBe(false);

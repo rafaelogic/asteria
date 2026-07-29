@@ -31,7 +31,7 @@ import { openStore, type AsteriaStore } from "./storage.js";
 import { LocalTelemetry } from "./telemetry.js";
 import { providerForRole, transitionWorkflow } from "../src/workflow.js";
 import { redactSecrets } from "../src/redaction.js";
-import { classifyChatCommand, decideChatCommand, defaultTakeover, maintenanceRequiresSource, recordIncident } from "./radio/supervisor.js";
+import { classifyChatCommand, decideChatCommand, defaultTakeover, maintenanceRequiresPreview, maintenanceRequiresSource, recordIncident } from "./radio/supervisor.js";
 import { inspectAttachment, revalidateAttachment } from "./radio/attachments.js";
 import { prepareUserCandidate, readUserInstallState } from "./radio/user-installer.js";
 import type { ApplicationMaintenanceSettings, DeploymentRun, HealthFinding, NetworkApproval, NetworkRequest, Project, ReleaseEvidence } from "../src/types.js";
@@ -39,6 +39,7 @@ import { RaDioAccountVault } from "./radio/account-vault.js";
 import { RaDioCore } from "./radio/core.js";
 import { SkillRegistry } from "./radio/skills/registry.js";
 import { SkillRuntime } from "./radio/skills/runtime.js";
+import { PreviewManager, type PreviewEvidence, type PreviewWindow } from "./radio/preview-manager.js";
 import { selectApplicationRaDioAccount, selectRaDioAccount } from "../src/radio.js";
 import { z } from "zod";
 import { execFile, spawn, spawnSync } from "node:child_process";
@@ -51,9 +52,10 @@ let store: AsteriaStore;
 let telemetry: LocalTelemetry;
 let accountVault: RaDioAccountVault;
 let radio: RaDioCore;
+let previewManager: PreviewManager;
 const skillRegistry = new SkillRegistry();
 const skillRuntime = new SkillRuntime(skillRegistry);
-const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude"; kind?: "workflow" | "chat" | "maintenance" | "authentication" | "repair" | "verification"; chatMessageId?: string; incidentId?: string; worktreePath?: string; profileId?: string; authUrlOpened?: boolean }>();
+const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude"; kind?: "workflow" | "chat" | "maintenance" | "authentication" | "repair" | "verification"; chatMessageId?: string; incidentId?: string; worktreePath?: string; profileId?: string; authUrlOpened?: boolean; hostPreview?: boolean }>();
 const pendingAttachments = new Map<string, Map<string, import("../src/types.js").RaDioChatAttachment>>();
 const runningProjectSessions = new Map<string, Set<string>>();
 const failedProjectSessions = new Set<string>();
@@ -159,6 +161,35 @@ function createWindow() {
   else void window.loadFile(path.join(currentDir, "../../dist/client/index.html"));
 }
 
+function createPreviewWindow(): PreviewWindow {
+  const consoleErrors: string[] = [];
+  const previewWindow = new BrowserWindow({
+    show: false,
+    width: 1280,
+    height: 900,
+    backgroundColor: "#070b0f",
+    webPreferences: {
+      offscreen: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true
+    }
+  });
+  previewWindow.webContents.on("console-message", (_event, level, message) => {
+    if (level >= 2) consoleErrors.push(redactSecrets(message));
+  });
+  previewWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  return {
+    loadURL: (url) => previewWindow.loadURL(url),
+    title: () => previewWindow.webContents.getTitle(),
+    rootText: async () => previewWindow.webContents.executeJavaScript(`document.querySelector("#root")?.textContent ?? ""`, true) as Promise<string>,
+    consoleErrors: () => [...consoleErrors],
+    capture: async () => (await previewWindow.webContents.capturePage()).toPNG(),
+    destroy: () => { if (!previewWindow.isDestroyed()) previewWindow.destroy(); }
+  };
+}
+
 app.on("second-instance", () => {
   if (!window) {
     if (app.isReady()) createWindow();
@@ -180,6 +211,7 @@ app.whenReady().then(async () => {
     await accountVault.load();
     await accountVault.ensureDefaults(["codex", "claude"]);
     radio = new RaDioCore(accountVault);
+    previewManager = new PreviewManager(path.join(app.getPath("userData"), "preview-evidence"), createPreviewWindow);
     configureGitHubStorage(app.getPath("userData"));
     telemetry = new LocalTelemetry(store.telemetry);
     process.env.ASTERIA_NETWORK_PROXY = await networkProxy.listen();
@@ -217,7 +249,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-app.on("before-quit", () => { networkProxy.close(); store?.close(); });
+app.on("before-quit", () => { networkProxy.close(); void previewManager?.close(); store?.close(); });
 
 async function launchRepair(projectId: string, incidentId: string) {
   const project = store.projects.get(projectId);
@@ -375,6 +407,46 @@ async function validateAsteriaSource(repositoryPath: string) {
   return { path: repositoryPath, repository: path.basename(repositoryPath) };
 }
 
+function previewEvidenceSummary(evidence: PreviewEvidence) {
+  return `Asteria host preview verified at ${evidence.url}. Electron loaded "${evidence.title}", rendered ${evidence.rootText.length} text characters, captured screenshot digest ${evidence.screenshotDigest.slice(0, 12)}, and observed ${evidence.consoleErrors.length} console errors.`;
+}
+
+async function finishMaintenancePreview(sessionId: string, messageId: string) {
+  try {
+    const evidence = await previewManager.verify(sessionId);
+    const current = store.maintenance.get();
+    const now = new Date().toISOString();
+    const updated = store.maintenance.save({
+      ...current,
+      chat: {
+        ...current.chat,
+        updatedAt: now,
+        messages: current.chat.messages.map((message) => message.id === messageId
+          ? { ...message, body: `${message.body}${message.body ? "\n\n" : ""}Host preview evidence: ${previewEvidenceSummary(evidence)}` }
+          : message)
+      }
+    }, current.version, `maintenance_preview_${messageId}_${Date.now()}`);
+    window?.webContents.send("maintenance:updated", updated);
+  } catch (error) {
+    const current = store.maintenance.get();
+    const now = new Date().toISOString();
+    const detail = redactSecrets(error instanceof Error ? error.message : "Host preview verification failed.");
+    const updated = store.maintenance.save({
+      ...current,
+      chat: {
+        ...current.chat,
+        updatedAt: now,
+        messages: current.chat.messages.map((message) => message.id === messageId
+          ? { ...message, body: `${message.body}${message.body ? "\n\n" : ""}Host preview evidence: verification failed — ${detail}` }
+          : message)
+      }
+    }, current.version, `maintenance_preview_failure_${messageId}_${Date.now()}`);
+    window?.webContents.send("maintenance:updated", updated);
+  } finally {
+    await previewManager.stop(sessionId);
+  }
+}
+
 async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, responseId: string, body: string) {
   const workspace = state.source?.path ?? path.join(app.getPath("userData"), "maintenance-radio", "workspace");
   await mkdir(workspace, { recursive: true, mode: 0o700 });
@@ -382,13 +454,31 @@ async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, r
   const sessionId = `maintenance_${responseId.slice(0, 8)}`;
   const account = selectApplicationRaDioAccount(accountVault.list(), state.provider, ["structured-stream", "cancellation", "isolated-home", "tool-events"]);
   const context = await createIsolationContext(app.getPath("userData"), sessionId, workspace, state.provider, account?.id);
-  sessionContext.set(sessionId, { projectId: "application", runId: "maintenance", role: "RaDio", provider: state.provider, kind: "maintenance", chatMessageId: responseId, profileId: account?.id });
+  const hostPreview = Boolean(state.source && maintenanceRequiresPreview(body));
+  let previewEvidence: PreviewEvidence | undefined;
+  if (hostPreview) {
+    try {
+      previewEvidence = await previewManager.start(sessionId, state.source!.path);
+    } catch (error) {
+      const current = store.maintenance.get();
+      const now = new Date().toISOString();
+      const detail = redactSecrets(error instanceof Error ? error.message : "Asteria's trusted host could not start the preview.");
+      const failed = store.maintenance.save({
+        ...current,
+        chat: { ...current.chat, updatedAt: now, messages: current.chat.messages.map((message) => message.id === responseId ? { ...message, body: `Host preview startup failed: ${detail}`, status: "failed" as const, completedAt: now } : message) },
+      }, current.version, `maintenance_preview_start_failure_${responseId}`);
+      window?.webContents.send("maintenance:updated", failed);
+      return failed;
+    }
+  }
+  sessionContext.set(sessionId, { projectId: "application", runId: "maintenance", role: "RaDio", provider: state.provider, kind: "maintenance", chatMessageId: responseId, profileId: account?.id, hostPreview });
   const projects = store.projects.list();
   const openIncidents = projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved"));
   const install = await readUserInstallState();
   try {
-    providers.start(state.provider, `${radio.governingPrompt()}\nYou are Maintenance RaDio, isolated from Orbit chats. Discuss only Asteria application health, installation, recovery, incidents, and maintenance reports. Never reveal the source path, credentials, hidden reasoning, raw provider conversations, or unrelated Orbit content. ${state.source ? "A validated Asteria source repository is available. You may inspect and edit files only inside that repository when the owner requests code changes; preserve unrelated changes and run proportionate checks." : "No source repository is available; answer from normalized application state only and do not inspect or edit code."}\nInstalled version: ${install.currentVersion ?? app.getVersion()}\nRollback ready: ${install.rollbackReady}\nOrbit count: ${projects.length}\nOpen application-relevant incidents: ${openIncidents.length}\nOwner request: ${redactSecrets(body)}`, context, { workspaceWrite: Boolean(state.source) });
+    providers.start(state.provider, `${radio.governingPrompt()}\nYou are Maintenance RaDio, isolated from Orbit chats. Discuss only Asteria application health, installation, recovery, incidents, and maintenance reports. Never reveal the source path, credentials, hidden reasoning, raw provider conversations, or unrelated Orbit content. ${state.source ? "A validated Asteria source repository is available. You may inspect and edit files only inside that repository when the owner requests code changes; preserve unrelated changes and run proportionate checks." : "No source repository is available; answer from normalized application state only and do not inspect or edit code."}${previewEvidence ? `\nAsteria's trusted host already started and loaded the project preview outside your provider sandbox. Do not start another localhost server. Initial evidence: ${previewEvidenceSummary(previewEvidence)} Asteria will reload and capture final host evidence after your run.` : ""}\nInstalled version: ${install.currentVersion ?? app.getVersion()}\nRollback ready: ${install.rollbackReady}\nOrbit count: ${projects.length}\nOpen application-relevant incidents: ${openIncidents.length}\nOwner request: ${redactSecrets(body)}`, context, { workspaceWrite: Boolean(state.source) });
   } catch (error) {
+    if (hostPreview) await previewManager.stop(sessionId);
     sessionContext.delete(sessionId);
     const current = store.maintenance.get();
     const now = new Date().toISOString();
@@ -449,7 +539,10 @@ providers.on("event", (sessionId: string, event) => {
       },
     }, current.version, `maintenance_event_${event.id}`);
     window?.webContents.send("maintenance:updated", updated);
-    if (terminal) sessionContext.delete(sessionId);
+    if (terminal) {
+      sessionContext.delete(sessionId);
+      if (context.hostPreview) void finishMaintenancePreview(sessionId, context.chatMessageId);
+    }
     return;
   }
   if (context && (context.kind === "repair" || context.kind === "verification") && (event.type === "completed" || event.type === "error")) {
@@ -950,7 +1043,11 @@ ipcMain.handle("maintenance:cancel", (_event, raw) => {
   const input = MaintenanceCancelSchema.parse(raw);
   const current = store.maintenance.get();
   const active = [...sessionContext].find(([, context]) => context.kind === "maintenance" && context.chatMessageId === input.messageId);
-  if (active) { providers.cancel(active[0]); sessionContext.delete(active[0]); }
+  if (active) {
+    providers.cancel(active[0]);
+    sessionContext.delete(active[0]);
+    if (active[1].hostPreview) void previewManager.stop(active[0]);
+  }
   const now = new Date().toISOString();
   const updated = store.maintenance.save({
     ...current,
