@@ -120,7 +120,7 @@ atomicLink(versionPath, currentLink);
 writeFileSync(path.join(binHome, "asteria"), `#!/bin/sh\nunset ELECTRON_RUN_AS_NODE\nexec "${currentLink}/asteria" --ozone-platform=x11 "$@"\n`, { mode: 0o755 });
 // A user desktop file with the same ID takes precedence over the legacy system
 // package while preserving the launcher identity already cached by desktop shells.
-writeFileSync(path.join(dataHome, "applications", "asteria.desktop"), `[Desktop Entry]\nName=Asteria\nComment=Agentic workflow control plane\nExec=${path.join(binHome, "asteria")}\nTryExec=${path.join(binHome, "asteria")}\nIcon=asteria\nTerminal=false\nType=Application\nStartupWMClass=Asteria\nDBusActivatable=false\nCategories=Development;\n`, { mode: 0o644 });
+writeFileSync(path.join(dataHome, "applications", "asteria.desktop"), `[Desktop Entry]\nName=Asteria\nComment=Agentic workflow control plane\nExec=/usr/bin/setsid -f ${path.join(binHome, "asteria")}\nTryExec=${path.join(binHome, "asteria")}\nIcon=asteria\nTerminal=false\nType=Application\nStartupWMClass=Asteria\nDBusActivatable=false\nCategories=Development;\n`, { mode: 0o644 });
 rmSync(path.join(dataHome, "applications", "dev.asteria.Asteria.desktop"), { force: true });
 const icon = path.join(versionPath, "resources", "app.asar.unpacked", "build", "icon.png");
 const fallbackIcon = path.resolve("build/icons/512x512/apps/asteria.png");
