@@ -1,6 +1,9 @@
 # Prototype Instructions
 
 Run the local server yourself and open the preview in the browser available to this environment. Do not give the user server-start instructions when you can run it.
+If a provider cannot bind a preview listener, reuse an existing listener only after identifying it and successfully loading the expected application. Report build checks and visual preview verification as separate results.
+
+When an edit fails because its expected file context is stale, reread the current target region and retry with the smallest stable anchored change. Do not repeat the stale patch or treat a context mismatch as read-only access.
 
 Before making substantial visual changes, use the Product Design plugin's `get-context` skill when the visual source is unclear or no longer matches the current goal. When the user gives durable prototype-specific design feedback, preferences, or decisions, record them in `AGENTS.md`.
 
