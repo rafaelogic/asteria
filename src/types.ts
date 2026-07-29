@@ -239,6 +239,40 @@ export interface RaDioChatMessage {
 }
 export interface RaDioChat { id: string; projectId: string; runId: string; archived: boolean; messages: RaDioChatMessage[]; createdAt: string; updatedAt: string }
 
+export interface ApplicationSourceBinding {
+  path: string;
+  repository: string;
+  source: "folder" | "orbit";
+  projectId?: string;
+  validatedAt: string;
+}
+export interface MaintenanceMessage {
+  id: string;
+  author: "human" | "radio";
+  body: string;
+  operationId: string;
+  status: "waiting_for_source" | "streaming" | "completed" | "cancelled" | "failed";
+  requiresSource: boolean;
+  cards: RaDioExecutionCard[];
+  createdAt: string;
+  completedAt?: string;
+  redacted: true;
+}
+export interface MaintenanceChat {
+  id: string;
+  messages: MaintenanceMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+export interface ApplicationMaintenanceSettings {
+  version: number;
+  provider: ProviderId;
+  source?: ApplicationSourceBinding;
+  chat: MaintenanceChat;
+  pendingOperation?: { operationId: string; body: string; createdAt: string };
+  updatedAt: string;
+}
+
 export interface RaDioSettings {
   mode: RaDioMode;
   enabled: boolean;
@@ -594,6 +628,13 @@ export interface AsteriaApi {
     cancel(input: MutationInput & { messageId: string }): Promise<Project>;
     selectAttachments(projectId: string): Promise<RaDioChatAttachment[]>;
     validateAttachment(projectId: string, attachmentId: string): Promise<RaDioChatAttachment>;
+  };
+  maintenance: {
+    state(): Promise<ApplicationMaintenanceSettings>;
+    send(input: { expectedVersion: number; idempotencyKey: string; operationId: string; body: string }): Promise<ApplicationMaintenanceSettings>;
+    cancel(input: { expectedVersion: number; idempotencyKey: string; messageId: string }): Promise<ApplicationMaintenanceSettings>;
+    selectSource(input: { expectedVersion: number; idempotencyKey: string; operationId: string; source: "folder" | "orbit"; projectId?: string }): Promise<ApplicationMaintenanceSettings>;
+    disconnectSource(input: { expectedVersion: number; idempotencyKey: string }): Promise<ApplicationMaintenanceSettings>;
   };
   installer: {
     state(): Promise<UserInstallState>;

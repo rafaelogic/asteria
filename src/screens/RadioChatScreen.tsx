@@ -13,6 +13,7 @@ export function RadioChatScreen({ project, onProject }: { project: Project; onPr
   const [body, setBody] = useState("");
   const [attachments, setAttachments] = useState<RaDioChatAttachment[]>([]);
   const [busy, setBusy] = useState(false);
+  const [sendError, setSendError] = useState("");
   const [install, setInstall] = useState<UserInstallState>({ rollbackReady: false });
   const base = { projectId: project.id, runId: project.runId, expectedVersion: project.version };
   const openIncidents = useMemo(() => project.incidents.filter((item) => item.status !== "resolved"), [project.incidents]);
@@ -25,9 +26,12 @@ export function RadioChatScreen({ project, onProject }: { project: Project; onPr
   const send = async (value = body) => {
     if (!value.trim() || !window.asteria || selected?.archived) return;
     setBusy(true);
+    setSendError("");
     try {
       const updated = await window.asteria.radioChat.send({ ...base, idempotencyKey: `radio_chat_${crypto.randomUUID()}`, body: value, references: [], attachmentIds: attachments.filter((item) => item.status === "ready").map((item) => item.id) });
       onProject(updated); setBody(""); setAttachments([]);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "RaDio could not send this message.");
     } finally { setBusy(false); }
   };
   const takeover = async (action: "pause" | "resume" | "scan") => {
@@ -67,6 +71,7 @@ export function RadioChatScreen({ project, onProject }: { project: Project; onPr
           </div>
         </article>) : <div className="radio-chat-empty"><RobotIcon weight="duotone" /><h2>RaDio is listening</h2><p>Ask about this Orbit or give RaDio a command. Safety policy is applied before every action.</p><div>{suggestions.map((item) => <button key={item} onClick={() => void send(item)}>{item}</button>)}</div></div>}</div>
         {!selected?.archived && <div className="radio-chat-composer">
+          {sendError && <p className="radio-send-error" role="alert">{sendError}</p>}
           {attachments.length > 0 && <div className="chat-attachments">{attachments.map((attachment) => <span key={attachment.id} className={attachment.status}><FileIcon /><b>{attachment.name}</b><small>{attachment.status}</small><button aria-label={`Remove ${attachment.name}`} onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}><XIcon /></button></span>)}</div>}
           <textarea aria-label="Message RaDio" value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") void send(); }} placeholder="Ask RaDio or direct the Orbit…" />
           <footer><button className="icon-button" aria-label="Attach files" onClick={() => void attach()}><PaperclipIcon /></button><span>Ctrl/⌘ + Enter to send</span><button className="send-button" aria-label="Send to RaDio" disabled={busy || !body.trim()} onClick={() => void send()}><ArrowUpIcon weight="bold" /></button></footer>

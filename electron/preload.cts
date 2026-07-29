@@ -46,6 +46,13 @@ const api: AsteriaApi = {
     selectAttachments: (projectId) => ipcRenderer.invoke("radio-chat:select-attachments", projectId),
     validateAttachment: (projectId, attachmentId) => ipcRenderer.invoke("radio-chat:validate-attachment", { projectId, attachmentId })
   },
+  maintenance: {
+    state: () => ipcRenderer.invoke("maintenance:state"),
+    send: (input) => ipcRenderer.invoke("maintenance:send", input),
+    cancel: (input) => ipcRenderer.invoke("maintenance:cancel", input),
+    selectSource: (input) => ipcRenderer.invoke("maintenance:select-source", input),
+    disconnectSource: (input) => ipcRenderer.invoke("maintenance:disconnect-source", input)
+  },
   installer: {
     state: () => ipcRenderer.invoke("installer:state"),
     prepare: (input) => ipcRenderer.invoke("installer:prepare", input),

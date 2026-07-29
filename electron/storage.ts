@@ -3,7 +3,7 @@ import Database from "better-sqlite3-multiple-ciphers";
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync, readFileSync } from "node:fs";
 import path from "node:path";
-import type { OnboardingDraft, Project, RaDioMemoryEntry, SkillExecution, TelemetryEvent, TelemetryPolicy, TelemetrySummary } from "../src/types.js";
+import type { ApplicationMaintenanceSettings, OnboardingDraft, Project, RaDioMemoryEntry, SkillExecution, TelemetryEvent, TelemetryPolicy, TelemetrySummary } from "../src/types.js";
 import { PRODUCTION_WORKFLOW, recommendedRoles, transitionWorkflow } from "../src/workflow.js";
 import { DEFAULT_RADIO_SETTINGS } from "../src/radio.js";
 import { defaultTakeover } from "./radio/supervisor.js";
@@ -13,7 +13,30 @@ export interface AsteriaStore {
   projects: ProjectRepository;
   telemetry: TelemetryRepository;
   skills: SkillStateRepository;
+  maintenance: MaintenanceRepository;
   close(): void;
+}
+
+export class MaintenanceRepository {
+  constructor(private db: Database.Database) {}
+  get(): ApplicationMaintenanceSettings {
+    const row = this.db.prepare("SELECT value_json FROM settings WHERE key = 'radio.maintenance'").get() as { value_json: string } | undefined;
+    if (row) return JSON.parse(row.value_json) as ApplicationMaintenanceSettings;
+    const now = new Date().toISOString();
+    return { version: 1, provider: "codex", chat: { id: randomUUID(), messages: [], createdAt: now, updatedAt: now }, updatedAt: now };
+  }
+  save(value: ApplicationMaintenanceSettings, expectedVersion: number, idempotencyKey: string) {
+    const prior = this.db.prepare("SELECT result_json FROM idempotency WHERE key = ?").get(idempotencyKey) as { result_json: string } | undefined;
+    if (prior) return JSON.parse(prior.result_json) as ApplicationMaintenanceSettings;
+    const current = this.get();
+    if (current.version !== expectedVersion) throw new Error("Maintenance RaDio changed in another operation. Refresh before retrying.");
+    const updated = { ...value, version: expectedVersion + 1, updatedAt: new Date().toISOString() };
+    this.db.transaction(() => {
+      this.db.prepare("INSERT INTO settings(key, value_json) VALUES ('radio.maintenance', ?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json").run(JSON.stringify(updated));
+      this.db.prepare("INSERT INTO idempotency VALUES (?, ?, ?)").run(idempotencyKey, JSON.stringify(updated), updated.updatedAt);
+    })();
+    return updated;
+  }
 }
 
 export const DEFAULT_TELEMETRY_POLICY: TelemetryPolicy = {
@@ -422,6 +445,7 @@ export function openStore(dataRoot: string): AsteriaStore {
   const projects = new ProjectRepository(db);
   const telemetry = new TelemetryRepository(db);
   const skills = new SkillStateRepository(db);
+  const maintenance = new MaintenanceRepository(db);
   telemetry.enforceRetention();
-  return { db, projects, telemetry, skills, close: () => db.close() };
+  return { db, projects, telemetry, skills, maintenance, close: () => db.close() };
 }

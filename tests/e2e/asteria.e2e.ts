@@ -105,8 +105,16 @@ test("RaDio chat is project-scoped and denies privileged commands inline", async
 test("Rafael menu opens maintenance RaDio and sidebar content remains scrollable", async () => {
   await page.getByRole("button", { name: /Rafael Local profile/i }).click();
   await page.getByRole("menuitem", { name: /Maintenance RaDio/i }).click();
-  await expect(page.getByRole("heading", { name: "Maintenance RaDio" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Maintenance RaDio", exact: true })).toBeVisible();
   await expect(page.getByText("Application health")).toBeVisible();
+  await page.getByLabel("Message Maintenance RaDio").fill("What is the installed version and rollback readiness?");
+  await page.getByLabel("Send to Maintenance RaDio").click();
+  await expect(page.getByText("What is the installed version and rollback readiness?")).toBeVisible();
+  await page.getByLabel("Message Maintenance RaDio").fill("Analyze the Asteria code");
+  await page.getByLabel("Send to Maintenance RaDio").click();
+  await expect(page.getByText("Asteria source required")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Choose Asteria repository" })).toBeVisible();
+  await expect(page.getByLabel("Existing local Orbit")).toBeVisible();
   expect(await page.locator(".sidebar-scroll").evaluate((element) => getComputedStyle(element).overflowY)).toBe("auto");
 });
 
@@ -125,4 +133,5 @@ test("clean-install fixture bootstraps SQLCipher storage and the account vault",
   expect(existsSync(database)).toBe(true);
   expect(existsSync(accountVault)).toBe(true);
   expect(readFileSync(database).includes(Buffer.from("robust isolated production acceptance"))).toBe(false);
+  expect(readFileSync(database).includes(Buffer.from("Analyze the Asteria code"))).toBe(false);
 });

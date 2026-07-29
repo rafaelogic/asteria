@@ -145,6 +145,20 @@ export const ChatSendSchema = MutationSchema.extend({
   attachmentIds: z.array(z.string().uuid()).max(20)
 });
 export const ChatCancelSchema = MutationSchema.extend({ messageId: z.string().uuid() });
+export const MaintenanceMutationSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  idempotencyKey: IdempotencyKeySchema
+});
+export const MaintenanceSendSchema = MaintenanceMutationSchema.extend({
+  operationId: z.string().uuid(),
+  body: z.string().min(1).max(20_000)
+});
+export const MaintenanceCancelSchema = MaintenanceMutationSchema.extend({ messageId: z.string().uuid() });
+export const MaintenanceSourceSchema = MaintenanceMutationSchema.extend({
+  operationId: z.string().uuid(),
+  source: z.enum(["folder", "orbit"]),
+  projectId: z.string().min(4).max(80).optional()
+});
 export const HealthSignalSchema = z.object({
   projectId: z.string().min(4).max(80), runId: z.string().min(4).max(80), source: z.string().min(1).max(120),
   operation: z.string().min(1).max(240), message: z.string().min(1).max(4000), severity: z.enum(["info", "warning", "error", "critical"]).optional()
