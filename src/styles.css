@@ -26,7 +26,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--cyan); o
 .app-shell { display: grid; grid-template-columns: 196px 1fr; min-height: 100vh; background: radial-gradient(circle at 48% 48%, #0c1720 0, var(--bg) 48%); }
 .app-shell > main { min-width: 0; height: 100vh; overflow: auto; }
 .sidebar { position: relative; z-index: 4; height: 100vh; min-height: 0; padding: 0 11px 12px; border-right: 1px solid var(--line); background: rgba(7, 12, 17, .95); display: flex; flex-direction: column; overflow: hidden; }
-.sidebar-scroll { flex: 1 1 auto; min-height: 0; overflow-y: scroll; overflow-x: hidden; overscroll-behavior: contain; touch-action: pan-y; padding-top: 22px; padding-right: 5px; padding-bottom: 14px; scrollbar-gutter: stable; scrollbar-width: auto; scrollbar-color: #405866 #0a1117; }
+.sidebar-scroll { flex: 1 1 0%; height: 0; min-height: 0; overflow-y: scroll; overflow-x: hidden; overscroll-behavior: contain; touch-action: pan-y; padding-top: 22px; padding-right: 5px; padding-bottom: 14px; scrollbar-gutter: stable; scrollbar-width: auto; scrollbar-color: #557080 #0a1117; }
 .sidebar-scroll::-webkit-scrollbar { width: 10px; }
 .sidebar-scroll::-webkit-scrollbar-track { border-radius: 999px; background: #0a1117; }
 .sidebar-scroll::-webkit-scrollbar-thumb { min-height: 36px; border: 2px solid #0a1117; border-radius: 999px; background: #405866; }
@@ -59,6 +59,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--cyan); o
 .profile small { color: var(--muted); font-size: 10px; }
 .avatar { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid #354552; border-radius: 50%; background: #18232d; font-size: 11px; }
 .profile-menu { position: absolute; z-index: 30; left: 0; right: 0; bottom: calc(100% + 8px); padding: 6px; overflow: visible; border: 1px solid #344b59; border-radius: 10px; background: #0d151c; box-shadow: 0 18px 44px #000c; }
+.profile-menu-portal { position: fixed; z-index: 1000; left: 10px; right: auto; bottom: 70px; width: 176px; }
 .profile-menu button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px; border: 0; border-radius: 7px; background: transparent; cursor: pointer; text-align: left; }
 .profile-menu button:hover { background: var(--surface); }
 .profile-menu button > svg { color: var(--cyan); }
@@ -524,6 +525,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--cyan); o
   .app-shell { grid-template-columns: 72px 1fr; }
   .sidebar { padding: 0 8px 8px; }
   .sidebar-scroll { padding-top: 18px; }
+  .profile-menu-portal { width: 190px; }
   .sidebar .brand { font-size: 0; justify-content: center; }
   .app-mode, .project-picker, .nav-item span, .privacy-card span, .profile span:nth-child(2), .profile > svg { display: none; }
   .nav-item { justify-content: center; padding: 0; }

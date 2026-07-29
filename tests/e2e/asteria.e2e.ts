@@ -130,7 +130,11 @@ test("compact windows preserve the profile menu and visible sidebar scrolling", 
   expect(metrics.overflowY).toBe("scroll");
   expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
   await page.getByRole("button", { name: /Rafael Local profile/i }).click();
-  await expect(page.getByRole("menuitem", { name: /Maintenance RaDio/i })).toBeVisible();
+  const maintenanceMenu = page.getByRole("menuitem", { name: /Maintenance RaDio/i });
+  await expect(maintenanceMenu).toBeVisible();
+  const menuBox = await maintenanceMenu.boundingBox();
+  expect(menuBox?.x).toBeGreaterThanOrEqual(0);
+  expect(menuBox?.y).toBeGreaterThanOrEqual(0);
   await page.getByRole("menuitem", { name: /Maintenance RaDio/i }).click();
   await expect(page.getByRole("heading", { name: "Maintenance RaDio", exact: true })).toBeVisible();
 });

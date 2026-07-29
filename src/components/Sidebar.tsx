@@ -17,6 +17,7 @@ import {
   ,RobotIcon
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Brand } from "./Brand";
 import type { Project } from "../types";
 
@@ -47,9 +48,10 @@ export function Sidebar({ screen, onChange, projects, activeProjectId, onProject
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const close = (event: MouseEvent) => {
-      if (!profileRef.current?.contains(event.target as Node)) setProfileOpen(false);
+      if (!profileRef.current?.contains(event.target as Node) && !profileMenuRef.current?.contains(event.target as Node)) setProfileOpen(false);
     };
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
@@ -81,12 +83,12 @@ export function Sidebar({ screen, onChange, projects, activeProjectId, onProject
         </button>
       </div>
       <div className="profile-wrap" ref={profileRef}>
-        {profileOpen && <div className="profile-menu" role="menu">
+        {profileOpen && createPortal(<div className="profile-menu profile-menu-portal" role="menu" ref={profileMenuRef}>
           <button role="menuitem" onClick={() => { onChange("maintenance-radio"); setProfileOpen(false); }}>
             <RobotIcon size={18} weight="duotone" />
             <span><strong>Maintenance RaDio</strong><small>App health and reports</small></span>
           </button>
-        </div>}
+        </div>, document.body)}
         <button className="profile" aria-label="Rafael Local profile" aria-expanded={profileOpen} aria-haspopup="menu" onClick={() => setProfileOpen((open) => !open)}>
           <span className="avatar">RP</span>
           <span><strong>Rafael</strong><small>Local profile</small></span>
