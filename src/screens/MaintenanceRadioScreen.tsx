@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpIcon, CheckCircleIcon, FolderOpenIcon, HardDrivesIcon, LightbulbIcon, MagicWandIcon, PulseIcon, RobotIcon, StopCircleIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { MarkdownPreview } from "../components/RichPreview";
@@ -28,6 +28,7 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
   const [selectedOrbit, setSelectedOrbit] = useState("");
   const [error, setError] = useState("");
   const [promptImproved, setPromptImproved] = useState(false);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const readiness = useRadioReadiness(state?.provider ?? "codex");
   const localOrbits = projects.filter((project) => project.repositoryPath);
   useEffect(() => {
@@ -38,6 +39,10 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
     if (!state?.chat.messages.some((message) => message.status === "streaming")) return;
     const timer = window.setInterval(() => void window.asteria?.maintenance.state().then(setState), 800);
     return () => window.clearInterval(timer);
+  }, [state?.chat.messages]);
+  useEffect(() => {
+    const messages = messagesRef.current;
+    if (messages) messages.scrollTop = messages.scrollHeight;
   }, [state?.chat.messages]);
   const incidents = useMemo(() => projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved").map((incident) => ({ project, incident }))), [projects]);
   const observations = useMemo(() => projects.reduce((total, project) => total + project.artifacts.length, 0), [projects]);
@@ -83,7 +88,7 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
     <div className="maintenance-layout">
       <section className="maintenance-chat">
         <header><span><strong>Application conversation</strong><small>{observations} encrypted Observations available</small></span><b>{state?.provider ?? "codex"}</b></header>
-        <div className="maintenance-messages"><AnimatePresence initial={false}>{state?.chat.messages.length ? state.chat.messages.map((message) => <motion.article initial={{ opacity: 0, y: 10, scale: .99 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: .24 }} key={message.id} className={message.author}>
+        <div className="maintenance-messages" ref={messagesRef}><AnimatePresence initial={false}>{state?.chat.messages.length ? state.chat.messages.map((message) => <motion.article initial={{ opacity: 0, y: 10, scale: .99 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: .24 }} key={message.id} className={message.author}>
           <span>{message.author === "radio" ? <RobotIcon weight="duotone" /> : "You"}</span>
           <div><header><strong>{message.author === "radio" ? "Maintenance RaDio" : "Rafael"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MaintenanceMarkdown content={message.body} />}
             {message.status === "streaming" && <ResponseActivity hasContent={Boolean(message.body)} />}
@@ -93,7 +98,7 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
                 {localOrbits.length > 0 && <div className="source-orbit-row"><select aria-label="Existing local Orbit" value={selectedOrbit} onChange={(event) => setSelectedOrbit(event.target.value)}><option value="">Choose local Orbit…</option>{localOrbits.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select><button className="button secondary" disabled={!selectedOrbit} onClick={() => void selectSource("orbit")}>Use Orbit</button></div>}
               </div>
             </div>}
-            {message.status === "streaming" && <button className="text-button" onClick={() => void cancel(message.id)}><StopCircleIcon /> Stop response</button>}
+            {message.status === "streaming" && <button className="text-button conversation-stop" onClick={() => void cancel(message.id)}><StopCircleIcon /> Stop</button>}
           </div>
         </motion.article>) : <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="maintenance-chat-empty"><RobotIcon weight="duotone" /><h3>Ask Maintenance RaDio</h3><p>Status and reports need no repository. Source access is requested only when code work begins.</p><div>{starters.map((starter) => <button key={starter} onClick={() => { setBody(starter); setPromptImproved(false); }}>{starter}</button>)}</div></motion.div>}</AnimatePresence></div>
         {error && <p className="radio-send-error" role="alert">{error}</p>}

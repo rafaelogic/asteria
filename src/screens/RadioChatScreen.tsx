@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpIcon, BrainIcon, CheckCircleIcon, FileIcon, PaperclipIcon, PauseIcon, PulseIcon, RobotIcon, StopCircleIcon, WarningIcon, WrenchIcon, XIcon } from "@phosphor-icons/react";
 import { MarkdownPreview } from "../components/RichPreview";
 import type { Project, RaDioChatAttachment, UserInstallState } from "../types";
@@ -17,10 +17,15 @@ export function RadioChatScreen({ project, onProject }: { project: Project; onPr
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState("");
   const [install, setInstall] = useState<UserInstallState>({ rollbackReady: false });
+  const messagesRef = useRef<HTMLDivElement>(null);
   const readiness = useRadioReadiness(project.provider, project);
   const base = { projectId: project.id, runId: project.runId, expectedVersion: project.version };
   const openIncidents = useMemo(() => project.incidents.filter((item) => item.status !== "resolved"), [project.incidents]);
   useEffect(() => { void window.asteria?.installer.state().then(setInstall); }, [project.id]);
+  useEffect(() => {
+    const messages = messagesRef.current;
+    if (messages) messages.scrollTop = messages.scrollHeight;
+  }, [selected?.messages]);
 
   const attach = async () => {
     const selectedFiles = await window.asteria?.radioChat.selectAttachments(project.id);
@@ -63,7 +68,7 @@ export function RadioChatScreen({ project, onProject }: { project: Project; onPr
         {openIncidents.length > 0 && <section><span className="eyebrow">Open incidents</span>{openIncidents.slice(0, 4).map((incident) => <div key={incident.id}><WarningIcon /><span><strong>{incident.title}</strong><small>{incident.owner} · {incident.status}</small></span></div>)}</section>}
       </aside>
       <section className="radio-conversation">
-        <div className="radio-messages">{selected?.messages.length ? selected.messages.map((message) => <article key={message.id} className={`radio-message ${message.author}`}>
+        <div className="radio-messages" ref={messagesRef}>{selected?.messages.length ? selected.messages.map((message) => <article key={message.id} className={`radio-message ${message.author}`}>
           <span className="radio-message-avatar">{message.author === "radio" ? <RobotIcon weight="duotone" /> : "You"}</span>
           <div><header><strong>{message.author === "radio" ? "RaDio" : "Project owner"}</strong><time>{new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>{message.status === "streaming" && <i className="streaming-dot" />}</header>
             {message.body && <MarkdownPreview content={message.body} />}
@@ -71,7 +76,7 @@ export function RadioChatScreen({ project, onProject }: { project: Project; onPr
             {message.attachments.length > 0 && <div className="chat-attachments sent">{message.attachments.map((attachment) => <span key={attachment.id}><FileIcon /><b>{attachment.name}</b><small>{Math.ceil(attachment.size / 1024)} KB</small></span>)}</div>}
             {message.command && <div className={`chat-command ${message.command.status}`}><BrainIcon /><span><strong>{message.command.kind} command</strong><small>{message.command.policyReason}</small></span><b>{message.command.status}</b></div>}
             {message.cards.map((card) => <div className={`chat-execution-card ${card.status}`} key={card.id}>{card.status === "completed" ? <CheckCircleIcon /> : card.status === "failed" || card.status === "blocked" ? <WarningIcon /> : <PulseIcon />}<span><strong>{card.title}</strong><small>{card.detail}</small></span><b>{card.status}</b></div>)}
-            {message.status === "streaming" && <button className="text-button" onClick={() => void cancel(message.id)}><StopCircleIcon /> Stop response</button>}
+            {message.status === "streaming" && <button className="text-button conversation-stop" onClick={() => void cancel(message.id)}><StopCircleIcon /> Stop</button>}
           </div>
         </article>) : <div className="radio-chat-empty"><RobotIcon weight="duotone" /><h2>RaDio is listening</h2><p>Ask about this Orbit or give RaDio a command. Safety policy is applied before every action.</p><div>{suggestions.map((item) => <button key={item} onClick={() => void send(item)}>{item}</button>)}</div></div>}</div>
         {!selected?.archived && <div className="radio-chat-composer">
