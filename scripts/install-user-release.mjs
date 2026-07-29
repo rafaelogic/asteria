@@ -86,7 +86,7 @@ if (rollback) {
     }
   }
   writeFileSync(statePath, JSON.stringify({ ...state, status: "rolled_back", currentPath: previous, previousPath: current, completedAt: new Date().toISOString() }, null, 2), { mode: 0o600 });
-  if (launch) { const child = spawn(path.join(previous, "asteria"), [], { detached: true, stdio: "ignore", env: applicationEnvironment }); child.unref(); }
+  if (launch) { const child = spawn(path.join(previous, "asteria"), ["--ozone-platform=x11"], { detached: true, stdio: "ignore", env: applicationEnvironment }); child.unref(); }
   console.log(`Rolled back Asteria to ${previous}`);
   process.exit(0);
 }
@@ -124,5 +124,5 @@ const state = {
   completedAt: new Date().toISOString(),
 };
 writeFileSync(statePath, JSON.stringify(state, null, 2), { mode: 0o600 });
-if (launch) { const child = spawn(path.join(versionPath, "asteria"), [], { detached: true, stdio: "ignore", env: applicationEnvironment }); child.unref(); }
+if (launch) { const child = spawn(path.join(versionPath, "asteria"), ["--ozone-platform=x11"], { detached: true, stdio: "ignore", env: applicationEnvironment }); child.unref(); }
 console.log(`Installed Asteria ${manifest.version} for ${os.userInfo().username} at ${versionPath}`);
