@@ -387,9 +387,6 @@ async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, r
   const openIncidents = projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved"));
   const install = await readUserInstallState();
   try {
-    if (!account && !providers.isAuthenticated(state.provider, context)) {
-      throw new Error(`Maintenance RaDio needs an authenticated ${state.provider === "codex" ? "OpenAI Codex" : "Claude Code"} account. Open Settings → Provider account pool and sign in or reconnect an account.`);
-    }
     providers.start(state.provider, `${radio.governingPrompt()}\nYou are Maintenance RaDio, isolated from Orbit chats. Discuss only Asteria application health, installation, recovery, incidents, and maintenance reports. Never reveal the source path, credentials, hidden reasoning, raw provider conversations, or unrelated Orbit content. ${state.source ? "A validated Asteria source repository is available. You may inspect and edit files only inside that repository when the owner requests code changes; preserve unrelated changes and run proportionate checks." : "No source repository is available; answer from normalized application state only and do not inspect or edit code."}\nInstalled version: ${install.currentVersion ?? app.getVersion()}\nRollback ready: ${install.rollbackReady}\nOrbit count: ${projects.length}\nOpen application-relevant incidents: ${openIncidents.length}\nOwner request: ${redactSecrets(body)}`, context, { workspaceWrite: Boolean(state.source) });
   } catch (error) {
     sessionContext.delete(sessionId);

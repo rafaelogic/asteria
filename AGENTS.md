@@ -36,4 +36,6 @@ The constellation-inspired product language is durable: the app is Asteria, each
 
 RaDio is Asteria’s isolated autonomous core. Orbits choose Guided or Ascendant during onboarding; Ascendant is staging-first, direct pushes to main/master remain prohibited, and merge-plus-production authority is separately configurable. RaDio uses encrypted application-owned Codex and Claude account pools, switches at an authoritative 5% remaining-usage threshold through normalized redacted Waypoints, never guesses unavailable usage, and always requires focused approval before destructive live production-data operations.
 
+RaDio provider sessions must expose the same locally available provider skills and companion developer tools as the owner’s Codex or Claude environment, while preserving Asteria’s repository, network, deployment, credential, and approval boundaries.
+
 Every repository change must bump Asteria’s version in both `package.json` and `package-lock.json`. Follow semantic versioning: use a patch bump by default, a minor bump for backward-compatible features, and a major bump for breaking changes.

@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { resolveProviderCommand } from "../electron/providers";
+import { providerExecutionPath, resolveProviderCommand } from "../electron/providers";
 
 describe("provider executable resolution", () => {
   it("finds Codex bundled by the official OpenAI VS Code extension", () => {
@@ -29,5 +29,15 @@ describe("provider executable resolution", () => {
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
+  });
+
+  it("exposes provider companion tools to isolated sessions", () => {
+    const command = path.join("/opt", "codex", "bin", "codex");
+    const owner = path.join("/home", "owner");
+    const paths = providerExecutionPath(command, "/usr/bin:/bin", owner).split(path.delimiter);
+    expect(paths[0]).toBe(path.join("/opt", "codex", "bin"));
+    expect(paths).toContain(path.join(owner, ".local", "bin"));
+    expect(paths).toContain("/usr/bin");
+    expect(paths).toContain("/bin");
   });
 });

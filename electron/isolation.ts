@@ -1,4 +1,5 @@
 import { cp, mkdir, realpath, stat } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type { ProviderId } from "../src/types.js";
 
@@ -15,6 +16,23 @@ export interface IsolationContext {
 function assertInside(parent: string, child: string) {
   const relative = path.relative(parent, child);
   if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Resolved path escapes the Asteria data root.");
+}
+
+export async function mirrorProviderSkills(
+  ownerHome: string,
+  providerConfigHome: string,
+  provider: ProviderId
+) {
+  const source = path.join(ownerHome, provider === "codex" ? ".codex" : ".claude", "skills");
+  const destination = path.join(providerConfigHome, "skills");
+  try {
+    if (!(await stat(source)).isDirectory()) return false;
+    await cp(source, destination, { recursive: true, force: true, errorOnExist: false });
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 export async function createIsolationContext(
@@ -41,6 +59,7 @@ export async function createIsolationContext(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
+  await mirrorProviderSkills(os.homedir(), providerConfigHome, provider);
 
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,

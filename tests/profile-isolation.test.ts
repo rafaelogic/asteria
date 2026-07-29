@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createIsolationContext } from "../electron/isolation";
+import { createIsolationContext, mirrorProviderSkills } from "../electron/isolation";
 
 function digest(root: string) {
   const hash = createHash("sha256");
@@ -26,5 +26,25 @@ describe("shared profile non-interference", () => {
     expect(context.allowedRoots).not.toContain(shared);
     expect(existsSync(profile === "claude" ? context.env.CLAUDE_CONFIG_DIR : context.env.CODEX_HOME)).toBe(true);
     expect(digest(shared)).toBe(before);
+  });
+});
+
+describe("provider skill parity", () => {
+  it.each([
+    { provider: "codex" as const, config: ".codex" },
+    { provider: "claude" as const, config: ".claude" },
+  ])("mirrors owner $provider skills into every isolated agent home", async ({ provider, config }) => {
+    const owner = mkdtempSync(path.join(os.tmpdir(), "asteria-owner-"));
+    const isolated = mkdtempSync(path.join(os.tmpdir(), "asteria-isolated-"));
+    const skill = path.join(owner, config, "skills", "review", "SKILL.md");
+    mkdirSync(path.dirname(skill), { recursive: true });
+    writeFileSync(skill, "# Review");
+    try {
+      expect(await mirrorProviderSkills(owner, path.join(isolated, config), provider)).toBe(true);
+      expect(readFileSync(path.join(isolated, config, "skills", "review", "SKILL.md"), "utf8")).toBe("# Review");
+    } finally {
+      rmSync(owner, { recursive: true, force: true });
+      rmSync(isolated, { recursive: true, force: true });
+    }
   });
 });

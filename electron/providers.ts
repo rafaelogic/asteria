@@ -102,6 +102,22 @@ export function providerStartArgs(
   ];
 }
 
+export function providerExecutionPath(command: string, currentPath = "", ownerHome = os.homedir()) {
+  const ownerToolDirectories = [
+    path.join(ownerHome, ".local", "bin"),
+    path.join(ownerHome, "bin"),
+    ...childDirectories(path.join(ownerHome, ".nvm", "versions", "node"))
+      .flatMap((version) => path.join(ownerHome, ".nvm", "versions", "node", version, "bin")),
+    "/home/linuxbrew/.linuxbrew/bin",
+    "/home/linuxbrew/.linuxbrew/sbin",
+  ];
+  return [...new Set([
+    path.dirname(command),
+    ...ownerToolDirectories,
+    ...currentPath.split(path.delimiter).filter(Boolean),
+  ])].join(path.delimiter);
+}
+
 function versionNumber(value?: string) {
   const match = value?.match(/(\d+)\.(\d+)\.(\d+)/);
   return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : undefined;
@@ -206,9 +222,6 @@ export class ProviderManager extends EventEmitter {
     if (this.sessions.has(context.sessionId)) throw new Error("Session is already running.");
     const command = resolveProviderCommand(provider);
     if (!command) throw new Error(`${provider === "codex" ? "OpenAI Codex" : "Claude Code"} CLI could not be resolved.`);
-    if (!this.isAuthenticated(provider, context)) {
-      throw new Error(`${provider === "codex" ? "OpenAI Codex" : "Claude Code"} is installed, but Asteria's isolated provider profile is not authenticated. Sign in from Asteria Settings.`);
-    }
     const shell = os.platform() === "win32" ? "powershell.exe" : command;
     const providerArgs = providerStartArgs(provider, prompt, options);
     const windowsFlags = provider === "codex"
@@ -217,12 +230,16 @@ export class ProviderManager extends EventEmitter {
     const args = os.platform() === "win32"
       ? ["-NoProfile", "-Command", `& '${command.replaceAll("'", "''")}' ${windowsFlags} -- $input`, prompt]
       : providerArgs;
+    const env = {
+      ...context.env,
+      PATH: providerExecutionPath(command, context.env.PATH),
+    };
     const process = pty.spawn(shell, args, {
       name: "xterm-256color",
       cols: 120,
       rows: 36,
       cwd: context.workspaceRoot,
-      env: context.env as Record<string, string>
+      env: env as Record<string, string>
     });
     this.sessions.set(context.sessionId, process);
     const normalizer = new ProviderStreamNormalizer();

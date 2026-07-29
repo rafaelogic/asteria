@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { ArrowUpIcon, CheckCircleIcon, FolderOpenIcon, HardDrivesIcon, PulseIcon, RobotIcon, StopCircleIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 import { MarkdownPreview } from "../components/RichPreview";
 import type { ApplicationMaintenanceSettings, Project, UserInstallState } from "../types";
 import { useRadioReadiness } from "../hooks/useRadioReadiness";
+
+const MaintenanceMarkdown = memo(MarkdownPreview);
 
 export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: Project[]; onOpenProject: (projectId: string) => void }) {
   const [install, setInstall] = useState<UserInstallState>({ rollbackReady: false });
@@ -60,7 +62,7 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
         <header><span><strong>Application conversation</strong><small>{observations} encrypted Observations available</small></span><b>{state?.provider ?? "codex"}</b></header>
         <div className="maintenance-messages">{state?.chat.messages.length ? state.chat.messages.map((message) => <article key={message.id} className={message.author}>
           <span>{message.author === "radio" ? <RobotIcon weight="duotone" /> : "You"}</span>
-          <div><header><strong>{message.author === "radio" ? "Maintenance RaDio" : "Rafael"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MarkdownPreview content={message.body} />}
+          <div><header><strong>{message.author === "radio" ? "Maintenance RaDio" : "Rafael"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MaintenanceMarkdown content={message.body} />}
             {message.status === "waiting_for_source" && pending?.operationId === message.operationId && <div className="source-required-card">
               <FolderOpenIcon /><div><strong>Asteria source required</strong><p>Choose a repository only when RaDio begins code analysis. Its path stays out of provider prompts.</p>
                 <button className="button primary" onClick={() => void selectSource("folder")}>Choose Asteria repository</button>

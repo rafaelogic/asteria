@@ -17,11 +17,25 @@ export interface AsteriaStore {
   close(): void;
 }
 
+const MAX_MAINTENANCE_MESSAGES = 100;
+const MAX_MAINTENANCE_BODY_LENGTH = 64 * 1024;
+
+export function compactMaintenanceState(value: ApplicationMaintenanceSettings): ApplicationMaintenanceSettings {
+  const messages = value.chat.messages.slice(-MAX_MAINTENANCE_MESSAGES).map((message) => ({
+    ...message,
+    body: message.body.length > MAX_MAINTENANCE_BODY_LENGTH
+      ? `${message.body.slice(0, MAX_MAINTENANCE_BODY_LENGTH)}\n\n[Earlier maintenance output truncated.]`
+      : message.body,
+    cards: message.cards.slice(-20),
+  }));
+  return { ...value, chat: { ...value.chat, messages } };
+}
+
 export class MaintenanceRepository {
   constructor(private db: Database.Database) {}
   get(): ApplicationMaintenanceSettings {
     const row = this.db.prepare("SELECT value_json FROM settings WHERE key = 'radio.maintenance'").get() as { value_json: string } | undefined;
-    if (row) return JSON.parse(row.value_json) as ApplicationMaintenanceSettings;
+    if (row) return compactMaintenanceState(JSON.parse(row.value_json) as ApplicationMaintenanceSettings);
     const now = new Date().toISOString();
     return { version: 1, provider: "codex", chat: { id: randomUUID(), messages: [], createdAt: now, updatedAt: now }, updatedAt: now };
   }
@@ -173,6 +187,18 @@ function migrate(db: Database.Database) {
       CREATE INDEX IF NOT EXISTS radio_memory_project_time ON radio_memory(project_id, updated_at);
       PRAGMA user_version = 2;
     `);
+  }
+  if (version < 3) {
+    db.exec(`
+      DELETE FROM idempotency WHERE key LIKE 'maintenance_event_%';
+      PRAGMA user_version = 3;
+    `);
+    const row = db.prepare("SELECT value_json FROM settings WHERE key = 'radio.maintenance'").get() as { value_json: string } | undefined;
+    if (row) {
+      const compacted = compactMaintenanceState(JSON.parse(row.value_json) as ApplicationMaintenanceSettings);
+      db.prepare("UPDATE settings SET value_json = ? WHERE key = 'radio.maintenance'").run(JSON.stringify(compacted));
+    }
+    db.exec("VACUUM");
   }
 }
 
