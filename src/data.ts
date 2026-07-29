@@ -75,6 +75,7 @@ function project(input: Partial<Project> & Pick<Project, "id" | "name" | "reposi
     ideas: [],
     accountTransitions: [],
     radioReports: [],
+    skillExecutions: [],
     budget: { minutes: 480, usedMinutes: 128, tokenLimit: 1_000_000, usedTokens: 284_000 },
     createdAt: now,
     updatedAt: now,

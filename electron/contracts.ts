@@ -47,6 +47,12 @@ export const RaDioSettingsSchema = z.object({
   maxRepairAttempts: z.number().int().min(1).max(3),
   dailyScout: z.boolean(),
   emergencyStopped: z.boolean(),
+  skillsEnabled: z.boolean().default(true),
+  enabledSkillIds: z.array(z.string().regex(/^[a-z0-9][a-z0-9.-]{2,79}$/)).max(100).default([]),
+  disabledSkillIds: z.array(z.string().regex(/^[a-z0-9][a-z0-9.-]{2,79}$/)).max(100).default([]),
+  approvedOrbitSkillDigests: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)).default({}),
+  memoryEnabled: z.boolean().default(false),
+  ownerMemoryEnabled: z.boolean().default(false),
   accountPool: z.object({
     enabled: z.boolean(), thresholdPercent: z.literal(5), crossProvider: z.boolean(),
     accountIds: z.array(z.string().uuid()).max(20),
@@ -69,6 +75,8 @@ export const OnboardingSchema = z.object({
   radio: RaDioSettingsSchema.default({
     mode: "autonomous", enabled: true, stagingBranch: "radio/staging", mergeProductionEnabled: false,
     maxRepairAttempts: 3, dailyScout: true, emergencyStopped: false,
+    skillsEnabled: true, enabledSkillIds: [], disabledSkillIds: [], approvedOrbitSkillDigests: {},
+    memoryEnabled: false, ownerMemoryEnabled: false,
     accountPool: { enabled: false, thresholdPercent: 5, crossProvider: true, accountIds: [] }
   }),
   telemetry: TelemetryPolicySchema,
@@ -107,6 +115,19 @@ export const RaDioHandoffSchema = MutationSchema.extend({
   agentId: z.string().min(1).max(120), role: SpecialistRoleSchema, accountId: z.string().uuid(),
   reason: z.enum(["threshold", "quota", "manual", "unavailable"]).optional()
 });
+export const SkillConfigureSchema = MutationSchema.extend({
+  skillId: z.string().regex(/^[a-z0-9][a-z0-9.-]{2,79}$/), enabled: z.boolean(),
+  approvedDigest: z.string().regex(/^[a-f0-9]{64}$/).optional()
+});
+export const SkillCancelSchema = MutationSchema.extend({ executionId: z.string().uuid() });
+export const MemoryAddSchema = MutationSchema.extend({
+  memoryId: z.string().uuid().optional(),
+  entry: z.object({
+    scope: z.enum(["orbit", "owner"]), kind: z.enum(["decision", "preference", "convention", "failure", "outcome"]),
+    title: z.string().min(1).max(160), value: z.string().min(1).max(4000), confidence: z.number().min(0).max(1)
+  })
+});
+export const MemoryForgetSchema = MutationSchema.extend({ memoryId: z.string().uuid() });
 export const CloneRepositorySchema = z.object({
   cloneUrl: z.string().url().max(2048),
   projectName: z.string().min(1).max(120),

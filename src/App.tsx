@@ -17,6 +17,7 @@ import { SettingsScreen } from "./screens/SettingsScreen";
 import { CodeScreen } from "./screens/CodeScreen";
 import { HelpScreen } from "./screens/HelpScreen";
 import { IdeasScreen } from "./screens/IdeasScreen";
+import { SkillsScreen } from "./screens/SkillsScreen";
 import type { Project, ProviderId } from "./types";
 
 interface AsteriaHistoryState {
@@ -30,7 +31,7 @@ export function App() {
   const previewScreen = new URLSearchParams(window.location.search).get("screen");
   const [onboarded, setOnboarded] = useState(() => previewScreen !== null || (!window.asteria && localStorage.getItem("asteria.onboarded") === "true"));
   const [projects, setProjects] = useState<Project[]>(() => window.asteria ? [] : demoProjects);
-  const [screen, setScreen] = useState<Screen>(() => previewScreen && ["projects", "workflow", "ideas", "kanban", "threads", "artifacts", "code", "insights", "help", "privacy", "settings"].includes(previewScreen) ? previewScreen as Screen : "workflow");
+  const [screen, setScreen] = useState<Screen>(() => previewScreen && ["projects", "workflow", "ideas", "kanban", "threads", "artifacts", "code", "skills", "insights", "help", "privacy", "settings"].includes(previewScreen) ? previewScreen as Screen : "workflow");
   const [activeProjectId, setActiveProjectId] = useState(() => localStorage.getItem("asteria.activeProject") ?? demoProjects[0].id);
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? projects[0];
   const [pausedProjects, setPausedProjects] = useState<Record<string, boolean>>({});
@@ -255,6 +256,7 @@ export function App() {
     if (screen === "threads") return <ThreadsScreen project={activeProject} onProject={replaceProject} />;
     if (screen === "artifacts") return <ArtifactsScreen project={activeProject} onProject={replaceProject} />;
     if (screen === "code") return <CodeScreen project={activeProject} />;
+    if (screen === "skills") return <SkillsScreen project={activeProject} onProject={replaceProject} />;
     if (screen === "insights") return <InsightsScreen project={activeProject} />;
     if (screen === "help") return <HelpScreen />;
     if (screen === "privacy") return <PrivacyScreen auditCount={auditCount} onDialog={setDialog} />;

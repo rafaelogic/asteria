@@ -35,6 +35,18 @@ const api: AsteriaApi = {
     safeHandoff: (input) => ipcRenderer.invoke("radio:safe-handoff", input),
     emergencyStop: (input) => ipcRenderer.invoke("radio:emergency-stop", input)
   },
+  skills: {
+    list: (projectId) => ipcRenderer.invoke("skills:list", projectId),
+    inspect: (projectId, skillId) => ipcRenderer.invoke("skills:inspect", { projectId, skillId }),
+    configure: (input) => ipcRenderer.invoke("skills:configure", input),
+    compatibility: (projectId, skillId) => ipcRenderer.invoke("skills:compatibility", { projectId, skillId }),
+    executions: (projectId) => ipcRenderer.invoke("skills:executions", projectId),
+    cancel: (input) => ipcRenderer.invoke("skills:cancel", input),
+    memory: (projectId) => ipcRenderer.invoke("skills:memory", projectId),
+    remember: (input) => ipcRenderer.invoke("skills:remember", input),
+    forget: (input) => ipcRenderer.invoke("skills:forget", input),
+    exportMemory: (projectId) => ipcRenderer.invoke("skills:export-memory", projectId)
+  },
   workflows: {
     advance: (input) => ipcRenderer.invoke("workflows:advance", input),
     execute: (input) => ipcRenderer.invoke("workflows:execute", input)

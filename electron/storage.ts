@@ -3,7 +3,7 @@ import Database from "better-sqlite3-multiple-ciphers";
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync, readFileSync } from "node:fs";
 import path from "node:path";
-import type { OnboardingDraft, Project, TelemetryEvent, TelemetryPolicy, TelemetrySummary } from "../src/types.js";
+import type { OnboardingDraft, Project, RaDioMemoryEntry, SkillExecution, TelemetryEvent, TelemetryPolicy, TelemetrySummary } from "../src/types.js";
 import { PRODUCTION_WORKFLOW, recommendedRoles, transitionWorkflow } from "../src/workflow.js";
 import { DEFAULT_RADIO_SETTINGS } from "../src/radio.js";
 
@@ -11,6 +11,7 @@ export interface AsteriaStore {
   db: Database.Database;
   projects: ProjectRepository;
   telemetry: TelemetryRepository;
+  skills: SkillStateRepository;
   close(): void;
 }
 
@@ -134,6 +135,21 @@ function migrate(db: Database.Database) {
       PRAGMA user_version = 1;
     `);
   }
+  if (version < 2) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS skill_executions (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL, operation_id TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL, data_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS skill_execution_project_time ON skill_executions(project_id, created_at);
+      CREATE TABLE IF NOT EXISTS radio_memory (
+        id TEXT PRIMARY KEY, project_id TEXT, scope TEXT NOT NULL, kind TEXT NOT NULL,
+        data_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS radio_memory_project_time ON radio_memory(project_id, updated_at);
+      PRAGMA user_version = 2;
+    `);
+  }
 }
 
 export class ProjectRepository {
@@ -152,8 +168,9 @@ export class ProjectRepository {
   private hydrate(project: Project): Project {
     return {
       ...project, artifacts: project.artifacts ?? [], approvals: project.approvals ?? [], messages: project.messages ?? [],
-      tasks: project.tasks ?? [], events: project.events ?? [], radio: project.radio ?? DEFAULT_RADIO_SETTINGS,
+      tasks: project.tasks ?? [], events: project.events ?? [], radio: { ...DEFAULT_RADIO_SETTINGS, ...(project.radio ?? {}), accountPool: { ...DEFAULT_RADIO_SETTINGS.accountPool, ...(project.radio?.accountPool ?? {}) } },
       ideas: project.ideas ?? [], accountTransitions: project.accountTransitions ?? [], radioReports: project.radioReports ?? []
+      ,skillExecutions: project.skillExecutions ?? []
     };
   }
 
@@ -199,6 +216,7 @@ export class ProjectRepository {
       ideas: [],
       accountTransitions: [],
       radioReports: [],
+      skillExecutions: [],
       budget: { minutes: 480, usedMinutes: 0, tokenLimit: 1_000_000, usedTokens: 0 },
       createdAt: now,
       updatedAt: now
@@ -250,6 +268,38 @@ export class ProjectRepository {
     }
     // transitionWorkflow increments for pure usage; save owns persistence versioning.
     return this.save({ ...transitioned, version: expectedVersion }, expectedVersion, idempotencyKey);
+  }
+}
+
+export class SkillStateRepository {
+  constructor(private db: Database.Database) {}
+  executions(projectId: string): SkillExecution[] {
+    return this.db.prepare("SELECT data_json FROM skill_executions WHERE project_id = ? ORDER BY created_at DESC").all(projectId)
+      .map((row) => JSON.parse((row as { data_json: string }).data_json) as SkillExecution);
+  }
+  saveExecution(execution: SkillExecution) {
+    const now = new Date().toISOString();
+    this.db.prepare(`INSERT INTO skill_executions VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(operation_id) DO UPDATE SET status=excluded.status, data_json=excluded.data_json, updated_at=excluded.updated_at`)
+      .run(execution.id, execution.projectId, execution.operationId, execution.status, JSON.stringify(execution), execution.startedAt, now);
+    return execution;
+  }
+  memory(projectId: string): RaDioMemoryEntry[] {
+    return this.db.prepare("SELECT data_json FROM radio_memory WHERE project_id = ? OR (project_id IS NULL AND scope = 'owner') ORDER BY updated_at DESC").all(projectId)
+      .map((row) => JSON.parse((row as { data_json: string }).data_json) as RaDioMemoryEntry);
+  }
+  remember(entry: RaDioMemoryEntry) {
+    this.db.prepare(`INSERT INTO radio_memory VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json, kind=excluded.kind, updated_at=excluded.updated_at`)
+      .run(entry.id, entry.projectId ?? null, entry.scope, entry.kind, JSON.stringify(entry), entry.createdAt, entry.updatedAt);
+    return entry;
+  }
+  forget(id: string, projectId: string) {
+    return this.db.prepare("DELETE FROM radio_memory WHERE id = ? AND (project_id = ? OR project_id IS NULL)").run(id, projectId).changes > 0;
+  }
+  memoryEntry(id: string, projectId: string) {
+    const row = this.db.prepare("SELECT data_json FROM radio_memory WHERE id = ? AND (project_id = ? OR project_id IS NULL)").get(id, projectId) as { data_json: string } | undefined;
+    return row ? JSON.parse(row.data_json) as RaDioMemoryEntry : undefined;
   }
 }
 
@@ -365,6 +415,7 @@ export function openStore(dataRoot: string): AsteriaStore {
   migrate(db);
   const projects = new ProjectRepository(db);
   const telemetry = new TelemetryRepository(db);
+  const skills = new SkillStateRepository(db);
   telemetry.enforceRetention();
-  return { db, projects, telemetry, close: () => db.close() };
+  return { db, projects, telemetry, skills, close: () => db.close() };
 }

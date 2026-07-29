@@ -12,7 +12,7 @@ import {
   DeviceFlowSchema, IsolationSchema, MoveTaskSchema, OnboardingSchema, PollFlowSchema, PostMessageSchema,
   ProjectUpdateSchema, PromoteMessageSchema, StartRunSchema, TelemetryPolicySchema, WorkflowMutationSchema,
   WorktreeSchema, ProviderAccountAddSchema, ProviderAccountUpdateSchema, RaDioSettingsMutationSchema, MutationSchema,
-  RaDioIdeaMutationSchema, RaDioHandoffSchema
+  RaDioIdeaMutationSchema, RaDioHandoffSchema, SkillConfigureSchema, SkillCancelSchema, MemoryAddSchema, MemoryForgetSchema
 } from "./contracts.js";
 import { checkpoint, cloneRepository, createTaskWorktree, repositoryStatus } from "./git.js";
 import {
@@ -27,9 +27,12 @@ import { ProviderManager } from "./providers.js";
 import { openStore, type AsteriaStore } from "./storage.js";
 import { LocalTelemetry } from "./telemetry.js";
 import { providerForRole, transitionWorkflow } from "../src/workflow.js";
+import { redactSecrets } from "../src/redaction.js";
 import type { DeploymentRun, HealthFinding, NetworkApproval, NetworkRequest, ReleaseEvidence } from "../src/types.js";
 import { RaDioAccountVault } from "./radio/account-vault.js";
 import { RaDioCore } from "./radio/core.js";
+import { SkillRegistry } from "./radio/skills/registry.js";
+import { SkillRuntime } from "./radio/skills/runtime.js";
 import { selectRaDioAccount } from "../src/radio.js";
 import { z } from "zod";
 import { execFile, spawn, spawnSync } from "node:child_process";
@@ -42,6 +45,8 @@ let store: AsteriaStore;
 let telemetry: LocalTelemetry;
 let accountVault: RaDioAccountVault;
 let radio: RaDioCore;
+const skillRegistry = new SkillRegistry();
+const skillRuntime = new SkillRuntime(skillRegistry);
 const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude" }>();
 const runningProjectSessions = new Map<string, Set<string>>();
 const failedProjectSessions = new Set<string>();
@@ -195,9 +200,20 @@ providers.on("event", (sessionId: string, event) => {
       if (project) {
         const failed = failedProjectSessions.delete(context.projectId);
         const tasks = project.tasks.map((task) => task.column === "Running" ? { ...task, column: failed ? "Blocked" as const : "Done" as const, meta: failed ? "Provider failed · review logs" : `${task.role ?? "Task"} · complete` } : task);
+        const now = new Date().toISOString();
+        const skillExecutions = (project.skillExecutions ?? []).map((execution) => {
+          if (execution.role !== context.role || execution.status !== "running") return execution;
+          const completed = {
+            ...execution, status: failed ? "failed" as const : "succeeded" as const, completedAt: now,
+            error: failed ? "Provider session failed; inspect the redacted replay." : undefined,
+            evidence: [...execution.evidence, { id: randomUUID(), executionId: execution.id, kind: "log" as const, title: failed ? "Provider failure recorded" : "Provider completion recorded", reference: sessionId, redacted: true as const, createdAt: now }]
+          };
+          store.skills.saveExecution(completed);
+          return completed;
+        });
         const next = failed
-          ? { ...project, tasks, runStatus: "blocked" as const, currentAction: { ...project.currentAction, title: "Specialist execution failed", detail: "Review the redacted replay and retry or hand off to another provider." } }
-          : { ...transitionWorkflow({ ...project, tasks }, "complete"), version: project.version };
+          ? { ...project, tasks, skillExecutions, runStatus: "blocked" as const, currentAction: { ...project.currentAction, title: "Specialist execution failed", detail: "Review the redacted replay and retry or hand off to another provider." } }
+          : { ...transitionWorkflow({ ...project, tasks, skillExecutions }, "complete"), version: project.version };
         const updated = store.projects.save(next, project.version, `provider_complete_${project.runId}_${Date.now()}`);
         window?.webContents.send("project:updated", updated);
       }
@@ -240,6 +256,7 @@ ipcMain.handle("workflows:execute", async (_event, raw) => {
   if (!activeSteps.length) throw new Error("No workflow stage is ready to execute.");
   const nextTasks = [...project.tasks];
   const launches: Array<{ sessionId: string; provider: "codex" | "claude"; profileId?: string; role: typeof activeSteps[number]["role"]; workspace: string; prompt: string }> = [];
+  const skillExecutions = [...(project.skillExecutions ?? [])];
   for (const step of activeSteps) {
     let task = nextTasks.find((item) => item.role === step.role && item.column !== "Done");
     if (!task) {
@@ -257,18 +274,28 @@ ipcMain.handle("workflows:execute", async (_event, raw) => {
       ? radio.selectAccount(project, step.role, ["structured-stream", "cancellation", "isolated-home", "tool-events"], provider)
       : undefined;
     if (project.radio.accountPool.enabled && !account) throw new Error(`No compatible authorized RaDio account can run ${step.specialist}.`);
+    const operationId = `${input.idempotencyKey}:${step.id}`;
+    const sessionId = `${project.runId}_${step.id}_${randomUUID().slice(0, 6)}`;
+    const preparedSkills = skillRuntime.prepare(project, step.name, step.role, operationId, account?.provider ?? provider, account?.id, sessionId);
+    for (const execution of preparedSkills) {
+      store.skills.saveExecution(execution);
+      skillExecutions.unshift(execution);
+    }
+    const activated = preparedSkills.filter((execution) => execution.status === "running")
+      .map((execution) => skillRegistry.inspect(project, execution.skillId).manifest);
     launches.push({
-      sessionId: `${project.runId}_${step.id}_${randomUUID().slice(0, 6)}`,
+      sessionId,
       provider: account?.provider ?? provider,
       profileId: account?.id,
       role: step.role,
       workspace: worktreePath,
-      prompt: `${radio.governingPrompt()}\n\nYou are the ${step.specialist} for Asteria project "${project.name}". Objective: ${project.objective}\nStage: ${step.name}\nConstraints: ${project.constraints ?? "None supplied"}\nWork only inside the provided isolated worktree. Produce the stage contract, implementation, tests, and evidence appropriate to your role. Never access ordinary user profiles or send analytics.`
+      prompt: `${radio.governingPrompt()}\n\n${skillRuntime.prompt(activated)}\n\nYou are the ${step.specialist} for Asteria project "${project.name}". Objective: ${project.objective}\nStage: ${step.name}\nConstraints: ${project.constraints ?? "None supplied"}\nWork only inside the provided isolated worktree. Produce the stage contract, implementation, tests, and evidence appropriate to your role. Never access ordinary user profiles or send analytics.`
     });
   }
   const updated = store.projects.save({
     ...project,
     tasks: nextTasks,
+    skillExecutions,
     currentAction: { ...project.currentAction, title: `${activeSteps.map((step) => step.name).join(" + ")} running`, detail: `${launches.length} isolated specialist session${launches.length === 1 ? "" : "s"} started.`, tool: `${launches.length} worktree${launches.length === 1 ? "" : "s"}` }
   }, input.expectedVersion, input.idempotencyKey);
   for (const launch of launches) {
@@ -409,6 +436,93 @@ ipcMain.handle("radio:emergency-stop", (_event, raw) => {
   runningProjectSessions.get(project.id)?.forEach((sessionId) => providers.cancel(sessionId));
   runningProjectSessions.delete(project.id);
   return store.projects.save({ ...project, runStatus: "paused", radio: { ...project.radio, enabled: false, emergencyStopped: true }, currentAction: { ...project.currentAction, title: "RaDio emergency stop", detail: "All project agent sessions were cancelled. Human review is required before resuming." } }, input.expectedVersion, input.idempotencyKey);
+});
+
+ipcMain.handle("skills:list", (_event, projectId: unknown) => {
+  const id = z.string().min(4).max(80).parse(projectId);
+  const project = store.projects.get(id);
+  if (!project) throw new Error("Orbit not found.");
+  return skillRegistry.discover(project);
+});
+ipcMain.handle("skills:inspect", (_event, raw) => {
+  const input = z.object({ projectId: z.string().min(4).max(80), skillId: z.string().min(3).max(80) }).parse(raw);
+  const project = store.projects.get(input.projectId);
+  if (!project) throw new Error("Orbit not found.");
+  return skillRegistry.inspect(project, input.skillId);
+});
+ipcMain.handle("skills:compatibility", (_event, raw) => {
+  const input = z.object({ projectId: z.string().min(4).max(80), skillId: z.string().min(3).max(80) }).parse(raw);
+  const project = store.projects.get(input.projectId);
+  if (!project) throw new Error("Orbit not found.");
+  return skillRegistry.inspect(project, input.skillId).compatibility;
+});
+ipcMain.handle("skills:configure", (_event, raw) => {
+  const input = SkillConfigureSchema.parse(raw);
+  const project = store.projects.get(input.projectId);
+  if (!project || project.runId !== input.runId) throw new Error("Project/run boundary mismatch.");
+  const record = skillRegistry.inspect(project, input.skillId);
+  if (record.manifest.source === "builtin" && input.approvedDigest) throw new Error("Built-in skill trust cannot be replaced.");
+  const enabled = new Set(project.radio.enabledSkillIds);
+  const disabled = new Set(project.radio.disabledSkillIds);
+  if (input.enabled) enabled.add(input.skillId); else enabled.delete(input.skillId);
+  if (input.enabled) disabled.delete(input.skillId); else disabled.add(input.skillId);
+  const approvals = { ...project.radio.approvedOrbitSkillDigests };
+  if (record.manifest.source === "orbit") {
+    if (input.enabled && input.approvedDigest !== record.manifest.integrity) throw new Error("Orbit skill digest approval is required.");
+    if (input.enabled) approvals[input.skillId] = input.approvedDigest!;
+    else delete approvals[input.skillId];
+  }
+  return store.projects.save({ ...project, radio: { ...project.radio, enabledSkillIds: [...enabled], disabledSkillIds: [...disabled], approvedOrbitSkillDigests: approvals } }, input.expectedVersion, input.idempotencyKey);
+});
+ipcMain.handle("skills:executions", (_event, projectId: unknown) => store.skills.executions(z.string().min(4).max(80).parse(projectId)));
+ipcMain.handle("skills:cancel", (_event, raw) => {
+  const input = SkillCancelSchema.parse(raw);
+  const project = store.projects.get(input.projectId);
+  if (!project || project.runId !== input.runId) throw new Error("Project/run boundary mismatch.");
+  const execution = (project.skillExecutions ?? []).find((item) => item.id === input.executionId);
+  if (!execution) throw new Error("Skill execution not found in this Orbit.");
+  const completedAt = new Date().toISOString();
+  if (execution.sessionId) {
+    providers.cancel(execution.sessionId);
+    sessionContext.delete(execution.sessionId);
+    runningProjectSessions.get(project.id)?.delete(execution.sessionId);
+  }
+  const skillExecutions = project.skillExecutions.map((item) => item.id === execution.id || (execution.sessionId && item.sessionId === execution.sessionId && item.status === "running")
+    ? { ...item, status: "cancelled" as const, completedAt } : item);
+  skillExecutions.filter((item) => item.completedAt === completedAt).forEach((item) => store.skills.saveExecution(item));
+  return store.projects.save({ ...project, skillExecutions }, input.expectedVersion, input.idempotencyKey);
+});
+ipcMain.handle("skills:memory", (_event, projectId: unknown) => {
+  const id = z.string().min(4).max(80).parse(projectId);
+  const project = store.projects.get(id);
+  if (!project?.radio.memoryEnabled) return [];
+  return store.skills.memory(id).filter((entry) => entry.scope === "orbit" || project.radio.ownerMemoryEnabled);
+});
+ipcMain.handle("skills:remember", (_event, raw) => {
+  const input = MemoryAddSchema.parse(raw);
+  const project = store.projects.get(input.projectId);
+  if (!project || project.runId !== input.runId || project.version !== input.expectedVersion || !project.radio.memoryEnabled) throw new Error("RaDio memory is disabled or the Orbit changed.");
+  if (input.entry.scope === "owner" && !project.radio.ownerMemoryEnabled) throw new Error("Owner memory sharing is disabled.");
+  const now = new Date().toISOString();
+  const existing = input.memoryId ? store.skills.memoryEntry(input.memoryId, project.id) : undefined;
+  if (input.memoryId && !existing) throw new Error("Memory entry was not found in the permitted scope.");
+  return store.skills.remember({ id: existing?.id ?? randomUUID(), projectId: input.entry.scope === "orbit" ? project.id : undefined, ...input.entry, title: redactSecrets(input.entry.title), value: redactSecrets(input.entry.value), createdAt: existing?.createdAt ?? now, updatedAt: now, redacted: true });
+});
+ipcMain.handle("skills:forget", (_event, raw) => {
+  const input = MemoryForgetSchema.parse(raw);
+  const project = store.projects.get(input.projectId);
+  if (!project || project.runId !== input.runId || project.version !== input.expectedVersion) throw new Error("Orbit changed before memory removal.");
+  if (!store.skills.forget(input.memoryId, project.id)) throw new Error("Memory entry was not found in the permitted scope.");
+});
+ipcMain.handle("skills:export-memory", async (_event, projectId: unknown) => {
+  const id = z.string().min(4).max(80).parse(projectId);
+  const project = store.projects.get(id);
+  if (!project?.radio.memoryEnabled) return null;
+  const entries = store.skills.memory(id).filter((entry) => entry.scope === "orbit" || project.radio.ownerMemoryEnabled);
+  const result = await dialog.showSaveDialog({ title: "Export redacted RaDio memory", defaultPath: `radio-memory-${project.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.json`, filters: [{ name: "JSON", extensions: ["json"] }] });
+  if (result.canceled || !result.filePath) return null;
+  await writeFile(result.filePath, JSON.stringify({ exportedAt: new Date().toISOString(), projectId: id, entries }, null, 2), { mode: 0o600 });
+  return result.filePath;
 });
 
 ipcMain.handle("repositories:clone", async (_event, raw) => {

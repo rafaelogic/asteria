@@ -7,6 +7,10 @@ export type RunStatus = "queued" | "active" | "approval" | "paused" | "blocked" 
 export type StepStatus = "complete" | "active" | "pending" | "blocked" | "failed" | "skipped";
 export type BoardColumn = "Backlog" | "Ready" | "Running" | "Review" | "Blocked" | "Done";
 export type RiskClassification = "read" | "workspace_write" | "external_mutation" | "destructive";
+export type SkillSource = "builtin" | "orbit";
+export type SkillPermission = "filesystem_read" | "filesystem_write" | "command_execute" | "git_write" | "network_read" | "external_mutation" | "deployment" | "production";
+export type SkillCapability = "filesystem" | "command" | "git" | "github" | "provider" | "research" | "browser" | "packages" | "tests" | "deployment" | "observability" | "notifications" | "approvals";
+export type SkillHealth = "ready" | "disabled" | "unapproved" | "incompatible" | "running" | "failed";
 export type SpecialistRole =
   | "planner" | "product_designer" | "ui_designer" | "architect"
   | "frontend" | "backend" | "database" | "devops" | "integrator"
@@ -143,6 +147,57 @@ export interface RaDioReport {
   createdAt: string;
 }
 
+export interface SkillManifest {
+  schemaVersion: 1;
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  source: SkillSource;
+  roles: SpecialistRole[];
+  coordinates: string[];
+  providers: ProviderId[];
+  platforms: Array<"linux" | "darwin" | "win32">;
+  requiredCapabilities: SkillCapability[];
+  requiredAdapters: string[];
+  dependencies: string[];
+  risk: RiskClassification;
+  permissions: SkillPermission[];
+  inputSchema: Record<string, unknown>;
+  outputSchema: Record<string, unknown>;
+  preconditions: string[];
+  successCriteria: string[];
+  validationCommands: string[];
+  timeoutSeconds: number;
+  maxRetries: number;
+  checkpoint: boolean;
+  rollback: string;
+  redaction: string[];
+  evidence: string[];
+  integrity: string;
+  compatibility: string;
+  instructions: string;
+}
+
+export interface SkillCompatibility { skillId: string; compatible: boolean; reasons: string[] }
+export interface SkillActivation { skillId: string; projectId: string; coordinate: string; role: SpecialistRole; activatedAt: string; automatic: boolean }
+export interface SkillEvidence { id: string; executionId: string; kind: "log" | "check" | "artifact" | "screenshot" | "citation" | "waypoint"; title: string; reference: string; redacted: true; createdAt: string }
+export interface SkillPolicyDecision { decision: "allow" | "approval" | "deny"; reason: string }
+export interface SkillExecution {
+  id: string; operationId: string; projectId: string; runId: string; skillId: string; skillVersion: string;
+  coordinate: string; role: SpecialistRole; status: "queued" | "running" | "validating" | "succeeded" | "failed" | "cancelled" | "blocked";
+  provider?: ProviderId; accountProfileId?: string; startedAt: string; completedAt?: string; attempt: number;
+  sessionId?: string;
+  policy: SkillPolicyDecision; adapterIds: string[]; evidence: SkillEvidence[]; error?: string;
+}
+export interface SkillResult { execution: SkillExecution; output: Record<string, unknown>; evidence: SkillEvidence[] }
+export interface CapabilityAdapter { id: string; capability: SkillCapability; operations: string[]; available: boolean }
+export interface SkillRecord { manifest: SkillManifest; enabled: boolean; approvedDigest?: string; health: SkillHealth; compatibility: SkillCompatibility }
+export interface RaDioMemoryEntry {
+  id: string; projectId?: string; scope: "orbit" | "owner"; kind: "decision" | "preference" | "convention" | "failure" | "outcome";
+  title: string; value: string; confidence: number; createdAt: string; updatedAt: string; expiresAt?: string; redacted: true;
+}
+
 export interface RaDioSettings {
   mode: RaDioMode;
   enabled: boolean;
@@ -154,6 +209,12 @@ export interface RaDioSettings {
   dailyScout: boolean;
   emergencyStopped: boolean;
   accountPool: AccountPoolPolicy;
+  skillsEnabled: boolean;
+  enabledSkillIds: string[];
+  disabledSkillIds: string[];
+  approvedOrbitSkillDigests: Record<string, string>;
+  memoryEnabled: boolean;
+  ownerMemoryEnabled: boolean;
 }
 
 export interface WorkflowStep {
@@ -253,6 +314,7 @@ export interface Project {
   ideas: IdeaProposal[];
   accountTransitions: AccountTransition[];
   radioReports: RaDioReport[];
+  skillExecutions: SkillExecution[];
   budget: { minutes: number; usedMinutes: number; tokenLimit: number; usedTokens: number };
   createdAt: string;
   updatedAt: string;
@@ -469,6 +531,18 @@ export interface AsteriaApi {
     updateIdea(input: MutationInput & { ideaId: string; status: IdeaStatus }): Promise<Project>;
     safeHandoff(input: MutationInput & { agentId: string; role: SpecialistRole; accountId: string; reason?: "threshold" | "quota" | "manual" | "unavailable" }): Promise<Project>;
     emergencyStop(input: MutationInput): Promise<Project>;
+  };
+  skills: {
+    list(projectId: string): Promise<SkillRecord[]>;
+    inspect(projectId: string, skillId: string): Promise<SkillRecord>;
+    configure(input: MutationInput & { skillId: string; enabled: boolean; approvedDigest?: string }): Promise<Project>;
+    compatibility(projectId: string, skillId: string): Promise<SkillCompatibility>;
+    executions(projectId: string): Promise<SkillExecution[]>;
+    cancel(input: MutationInput & { executionId: string }): Promise<Project>;
+    memory(projectId: string): Promise<RaDioMemoryEntry[]>;
+    remember(input: MutationInput & { memoryId?: string; entry: Pick<RaDioMemoryEntry, "scope" | "kind" | "title" | "value" | "confidence"> }): Promise<RaDioMemoryEntry>;
+    forget(input: MutationInput & { memoryId: string }): Promise<void>;
+    exportMemory(projectId: string): Promise<string | null>;
   };
   workflows: {
     advance(input: MutationInput & { event: "complete" | "fail_review" | "fail_qa" | "approve" | "pause" | "resume" }): Promise<Project>;

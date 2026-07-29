@@ -11,6 +11,7 @@ export const DEFAULT_RADIO_SETTINGS: RaDioSettings = {
   dailyScout: true,
   emergencyStopped: false,
   accountPool: { enabled: false, thresholdPercent: 5, crossProvider: true, accountIds: [] }
+  ,skillsEnabled: true, enabledSkillIds: [], disabledSkillIds: [], approvedOrbitSkillDigests: {}, memoryEnabled: false, ownerMemoryEnabled: false
 };
 
 export const RADIO_GOVERNING_PROMPT = `You are RaDio, Asteria's project-scoped autonomous coordinator.

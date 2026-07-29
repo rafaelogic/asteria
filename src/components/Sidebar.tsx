@@ -11,13 +11,14 @@ import {
   SparkleIcon,
   PlusIcon,
   StackIcon,
+  PuzzlePieceIcon,
   SquaresFourIcon,
   UsersThreeIcon
 } from "@phosphor-icons/react";
 import { Brand } from "./Brand";
 import type { Project } from "../types";
 
-export type Screen = "projects" | "workflow" | "ideas" | "kanban" | "threads" | "artifacts" | "code" | "insights" | "help" | "privacy" | "settings";
+export type Screen = "projects" | "workflow" | "ideas" | "kanban" | "threads" | "artifacts" | "code" | "skills" | "insights" | "help" | "privacy" | "settings";
 
 const items: Array<{ id: Screen; label: string; icon: typeof SquaresFourIcon }> = [
   { id: "projects", label: "All projects", icon: StackIcon },
@@ -27,6 +28,7 @@ const items: Array<{ id: Screen; label: string; icon: typeof SquaresFourIcon }> 
   { id: "threads", label: "Constellations", icon: UsersThreeIcon },
   { id: "artifacts", label: "Observations", icon: FileTextIcon },
   { id: "code", label: "Code", icon: CodeIcon },
+  { id: "skills", label: "RaDio skills", icon: PuzzlePieceIcon },
   { id: "insights", label: "Local insights", icon: ChartLineUpIcon },
   { id: "help", label: "Help & process", icon: QuestionIcon },
   { id: "privacy", label: "Privacy", icon: ShieldCheckIcon },
