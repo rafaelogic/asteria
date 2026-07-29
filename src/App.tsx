@@ -1,3 +1,4 @@
+import { ArrowLeftIcon, ShieldCheckIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ApprovalSheet } from "./components/ApprovalSheet";
@@ -21,7 +22,9 @@ import { SkillsScreen } from "./screens/SkillsScreen";
 import { RadioChatScreen } from "./screens/RadioChatScreen";
 import { MaintenanceRadioScreen } from "./screens/MaintenanceRadioScreen";
 import { FloatingRaDio } from "./components/FloatingRaDio";
+import { Brand } from "./components/Brand";
 import type { Project, ProviderId } from "./types";
+import { isApplicationWorkspace, workspaceHistoryProjectId } from "./workspace";
 
 interface AsteriaHistoryState {
   asteria: true;
@@ -61,7 +64,7 @@ export function App() {
   }), []);
 
   useEffect(() => {
-    if (!window.asteria || !activeProject) return;
+    if (!window.asteria || !activeProject || isApplicationWorkspace(screen)) return;
     const report = (operation: string, value: unknown) => {
       const message = value instanceof Error ? value.message : typeof value === "string" ? value : "Unhandled renderer failure";
       void window.asteria?.radio.reportHealth({ projectId: activeProject.id, runId: activeProject.runId, source: "renderer", operation, message, severity: "error" }).catch(() => undefined);
@@ -71,11 +74,11 @@ export function App() {
     window.addEventListener("error", onError);
     window.addEventListener("unhandledrejection", onRejection);
     return () => { window.removeEventListener("error", onError); window.removeEventListener("unhandledrejection", onRejection); };
-  }, [activeProject?.id, activeProject?.runId]);
+  }, [activeProject?.id, activeProject?.runId, screen]);
 
   useEffect(() => {
     if (loading) return;
-    const initial: AsteriaHistoryState = { asteria: true, screen, projectId: activeProject?.id, onboarding: !onboarded };
+    const initial: AsteriaHistoryState = { asteria: true, screen, projectId: workspaceHistoryProjectId(screen, activeProject?.id), onboarding: !onboarded };
     if (!(window.history.state as AsteriaHistoryState | null)?.asteria) window.history.replaceState(initial, "");
     const onPopState = (event: PopStateEvent) => {
       const state = event.state as AsteriaHistoryState | null;
@@ -93,7 +96,7 @@ export function App() {
   }, [loading, projects, activeProject?.id, onboarded, screen]);
 
   const pushHistory = (nextScreen: Screen, projectId = activeProject?.id, onboarding = false, replace = false) => {
-    const state: AsteriaHistoryState = { asteria: true, screen: nextScreen, projectId, onboarding };
+    const state: AsteriaHistoryState = { asteria: true, screen: nextScreen, projectId: workspaceHistoryProjectId(nextScreen, projectId), onboarding };
     window.history[replace ? "replaceState" : "pushState"](state, "");
   };
   const navigate = (nextScreen: Screen) => {
@@ -280,6 +283,25 @@ export function App() {
     if (screen === "privacy") return <PrivacyScreen auditCount={auditCount} onDialog={setDialog} />;
     return <SettingsScreen project={activeProject} onProject={replaceProject} />;
   })();
+
+  if (isApplicationWorkspace(screen)) {
+    return (
+      <div className="maintenance-workspace">
+        <header className="maintenance-workspace-bar">
+          <div className="maintenance-workspace-brand">
+            <Brand />
+            <span aria-hidden="true" />
+            <div><strong>Maintenance workspace</strong><small><ShieldCheckIcon weight="fill" /> Application scope · isolated from Orbits</small></div>
+          </div>
+          <button className="button secondary" onClick={() => navigate("projects")}><ArrowLeftIcon /> Return to All projects</button>
+        </header>
+        <motion.main key={screen} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+          {page}
+        </motion.main>
+        <AppDialog model={dialog} onClose={() => setDialog(null)} />
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">

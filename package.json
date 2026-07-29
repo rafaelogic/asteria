@@ -1,6 +1,6 @@
 {
   "name": "asteria",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "private": true,
   "description": "Privacy-hardened desktop control plane for autonomous software delivery",
   "desktopName": "asteria.desktop",
