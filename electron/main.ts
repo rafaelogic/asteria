@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, session, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, screen, session, shell } from "electron";
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { mkdir, rm } from "node:fs/promises";
@@ -64,6 +64,18 @@ const deployments = new Map<string, DeploymentRun>();
 const execFileAsync = promisify(execFile);
 let degradedCredentialStorage = false;
 app.setAppUserModelId("dev.asteria.desktop");
+if (process.platform === "linux") {
+  // Some desktop sessions can create a Chromium GPU process but cannot keep it
+  // alive. Electron treats repeated GPU crashes as fatal, so use the reliable
+  // software rendering path for both packaged and development Linux launches.
+  app.disableHardwareAcceleration();
+  // User-local installs cannot use Chromium's root-owned setuid helper, and
+  // Ubuntu's AppArmor policy blocks unprivileged user namespaces. Without this
+  // explicit fallback Chromium aborts before the renderer starts. Renderer
+  // isolation, context isolation, CSP, navigation controls, and network policy
+  // remain enforced by Asteria.
+  app.commandLine.appendSwitch("no-sandbox");
+}
 if (process.platform === "linux" && !app.commandLine.getSwitchValue("password-store")) {
   // Use Electron's stable Linux basic backend when Secret Service is unavailable.
   // This must be selected before app readiness so existing basic-backend keys remain decryptable.
@@ -92,11 +104,31 @@ function configureCredentialBackend() {
   throw new Error("The operating-system credential vault is unavailable. Asteria will not create an unencrypted application profile.");
 }
 
+function activeDisplayBounds() {
+  const workArea = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  const width = Math.min(1440, workArea.width);
+  const height = Math.min(1024, workArea.height);
+  return {
+    width,
+    height,
+    x: workArea.x + Math.max(0, Math.floor((workArea.width - width) / 2)),
+    y: workArea.y + Math.max(0, Math.floor((workArea.height - height) / 2)),
+  };
+}
+
+function showWindowOnActiveDisplay() {
+  if (!window) return;
+  if (window.isMinimized()) window.restore();
+  window.setBounds(activeDisplayBounds());
+  window.show();
+  window.focus();
+}
+
 function createWindow() {
   const applicationIcon = path.join(currentDir, "../../build/icon.png");
+  const bounds = activeDisplayBounds();
   window = new BrowserWindow({
-    width: 1440,
-    height: 1024,
+    ...bounds,
     minWidth: 980,
     minHeight: 680,
     backgroundColor: "#070b0f",
@@ -132,9 +164,7 @@ app.on("second-instance", () => {
     if (app.isReady()) createWindow();
     return;
   }
-  if (window.isMinimized()) window.restore();
-  window.show();
-  window.focus();
+  showWindowOnActiveDisplay();
 });
 
 app.whenReady().then(async () => {
@@ -360,7 +390,7 @@ async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, r
     if (!account && !providers.isAuthenticated(state.provider, context)) {
       throw new Error(`Maintenance RaDio needs an authenticated ${state.provider === "codex" ? "OpenAI Codex" : "Claude Code"} account. Open Settings → Provider account pool and sign in or reconnect an account.`);
     }
-    providers.start(state.provider, `${radio.governingPrompt()}\nYou are Maintenance RaDio, isolated from Orbit chats. Discuss only Asteria application health, installation, recovery, incidents, and maintenance reports. Never reveal the source path, credentials, hidden reasoning, raw provider conversations, or unrelated Orbit content. ${state.source ? "A validated Asteria source repository is available to this session." : "No source repository is available; answer from normalized application state only and do not inspect or edit code."}\nInstalled version: ${install.currentVersion ?? app.getVersion()}\nRollback ready: ${install.rollbackReady}\nOrbit count: ${projects.length}\nOpen application-relevant incidents: ${openIncidents.length}\nOwner request: ${redactSecrets(body)}`, context);
+    providers.start(state.provider, `${radio.governingPrompt()}\nYou are Maintenance RaDio, isolated from Orbit chats. Discuss only Asteria application health, installation, recovery, incidents, and maintenance reports. Never reveal the source path, credentials, hidden reasoning, raw provider conversations, or unrelated Orbit content. ${state.source ? "A validated Asteria source repository is available. You may inspect and edit files only inside that repository when the owner requests code changes; preserve unrelated changes and run proportionate checks." : "No source repository is available; answer from normalized application state only and do not inspect or edit code."}\nInstalled version: ${install.currentVersion ?? app.getVersion()}\nRollback ready: ${install.rollbackReady}\nOrbit count: ${projects.length}\nOpen application-relevant incidents: ${openIncidents.length}\nOwner request: ${redactSecrets(body)}`, context, { workspaceWrite: Boolean(state.source) });
   } catch (error) {
     sessionContext.delete(sessionId);
     const current = store.maintenance.get();
@@ -405,9 +435,10 @@ providers.on("event", (sessionId: string, event) => {
     return;
   }
   if (context?.kind === "maintenance" && context.chatMessageId) {
+    const terminal = event.type === "completed" || event.type === "error";
+    if (event.type !== "message" && !terminal) return;
     const current = store.maintenance.get();
     const now = new Date().toISOString();
-    const terminal = event.type === "completed" || event.type === "error";
     const updated = store.maintenance.save({
       ...current,
       chat: {

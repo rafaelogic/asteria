@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { resolveUserPath, sanitizedDesktopEnvironment } from "./user-paths.mjs";
@@ -21,6 +21,8 @@ const manifestPath = path.resolve(process.argv[3] || "dist/user-release.json");
 const rollback = process.argv.includes("--rollback");
 const launch = process.argv.includes("--launch");
 const applicationEnvironment = sanitizedDesktopEnvironment();
+const launchArguments = ["--ozone-platform=x11", "--disable-gpu", "--no-sandbox"];
+const launcherLog = path.join(stateHome, "asteria", "launcher.log");
 delete applicationEnvironment.ELECTRON_RUN_AS_NODE;
 for (const directory of [versionsRoot, releaseStateRoot, binHome, path.join(dataHome, "applications"), path.join(dataHome, "icons", "hicolor", "512x512", "apps")]) mkdirSync(directory, { recursive: true, mode: 0o700 });
 
@@ -69,7 +71,7 @@ async function canary(executable, version) {
   const canaryRoot = path.join(releaseStateRoot, `canary-${version}-${Date.now()}`);
   const heartbeat = path.join(canaryRoot, "healthy.json");
   mkdirSync(canaryRoot, { recursive: true, mode: 0o700 });
-  const child = spawn(executable, [`--user-data-dir=${path.join(canaryRoot, "profile")}`, "--password-store=basic", "--no-sandbox", "--ozone-platform=x11", "--disable-gpu"], { env: { ...applicationEnvironment, ASTERIA_HEALTHCHECK_FILE: heartbeat }, stdio: "ignore" });
+  const child = spawn(executable, [`--user-data-dir=${path.join(canaryRoot, "profile")}`, "--password-store=basic", ...launchArguments], { env: { ...applicationEnvironment, ASTERIA_HEALTHCHECK_FILE: heartbeat }, stdio: "ignore" });
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline && !existsSync(heartbeat) && child.exitCode === null) await new Promise((resolve) => setTimeout(resolve, 250));
   child.kill();
@@ -98,7 +100,7 @@ if (rollback) {
     }
   }
   writeFileSync(statePath, JSON.stringify({ ...state, status: "rolled_back", currentPath: previous, previousPath: current, completedAt: new Date().toISOString() }, null, 2), { mode: 0o600 });
-  if (launch) { const child = spawn(path.join(previous, "asteria"), ["--ozone-platform=x11"], { detached: true, stdio: "ignore", env: applicationEnvironment }); child.unref(); }
+  if (launch) { const child = spawn(path.join(previous, "asteria"), launchArguments, { detached: true, stdio: "ignore", env: applicationEnvironment }); child.unref(); }
   console.log(`Rolled back Asteria to ${previous}`);
   process.exit(0);
 }
@@ -117,10 +119,12 @@ const current = linkTarget(currentLink) ?? legacySnapTarget();
 const snapshot = snapshotStorage(manifest.version);
 if (current && current !== versionPath) atomicLink(current, previousLink);
 atomicLink(versionPath, currentLink);
-writeFileSync(path.join(binHome, "asteria"), `#!/bin/sh\nunset ELECTRON_RUN_AS_NODE\nexec "${currentLink}/asteria" --ozone-platform=x11 "$@" </dev/null >/dev/null 2>&1\n`, { mode: 0o755 });
+writeFileSync(path.join(binHome, "asteria"), `#!/bin/sh\nunset ELECTRON_RUN_AS_NODE\nexec "${currentLink}/asteria" ${launchArguments.join(" ")} "$@" </dev/null >>"${launcherLog}" 2>&1\n`, { mode: 0o755 });
 // A user desktop file with the same ID takes precedence over the legacy system
 // package while preserving the launcher identity already cached by desktop shells.
-writeFileSync(path.join(dataHome, "applications", "asteria.desktop"), `[Desktop Entry]\nName=Asteria\nComment=Agentic workflow control plane\nExec=/usr/bin/setsid -f ${path.join(binHome, "asteria")}\nTryExec=${path.join(binHome, "asteria")}\nIcon=asteria\nTerminal=false\nType=Application\nStartupWMClass=Asteria\nDBusActivatable=false\nCategories=Development;\n`, { mode: 0o644 });
+const desktopEntry = path.join(dataHome, "applications", "asteria.desktop");
+writeFileSync(desktopEntry, `[Desktop Entry]\nName=Asteria\nComment=Agentic workflow control plane\nExec=${path.join(binHome, "asteria")}\nTryExec=${path.join(binHome, "asteria")}\nIcon=asteria\nTerminal=false\nType=Application\nStartupWMClass=asteria\nStartupNotify=true\nDBusActivatable=false\nCategories=Development;\n`, { mode: 0o755 });
+chmodSync(desktopEntry, 0o755);
 rmSync(path.join(dataHome, "applications", "dev.asteria.Asteria.desktop"), { force: true });
 const icon = path.join(versionPath, "resources", "app.asar.unpacked", "build", "icon.png");
 const fallbackIcon = path.resolve("build/icons/512x512/apps/asteria.png");
@@ -140,5 +144,5 @@ const state = {
   completedAt: new Date().toISOString(),
 };
 writeFileSync(statePath, JSON.stringify(state, null, 2), { mode: 0o600 });
-if (launch) { const child = spawn(path.join(versionPath, "asteria"), ["--ozone-platform=x11"], { detached: true, stdio: "ignore", env: applicationEnvironment }); child.unref(); }
+if (launch) { const child = spawn(path.join(versionPath, "asteria"), launchArguments, { detached: true, stdio: "ignore", env: applicationEnvironment }); child.unref(); }
 console.log(`Installed Asteria ${manifest.version} for ${os.userInfo().username} at ${versionPath}`);

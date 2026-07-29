@@ -77,6 +77,31 @@ export function resolveProviderCommand(
   return candidates.find(executable);
 }
 
+export function providerStartArgs(
+  provider: ProviderId,
+  prompt: string,
+  options: { workspaceWrite?: boolean } = {}
+) {
+  if (provider === "codex") {
+    return [
+      "exec",
+      "--json",
+      "--sandbox",
+      options.workspaceWrite ? "workspace-write" : "read-only",
+      prompt,
+    ];
+  }
+  return [
+    "-p",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--permission-mode",
+    options.workspaceWrite ? "acceptEdits" : "plan",
+    prompt,
+  ];
+}
+
 function versionNumber(value?: string) {
   const match = value?.match(/(\d+)\.(\d+)\.(\d+)/);
   return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : undefined;
@@ -177,9 +202,7 @@ export class ProviderManager extends EventEmitter {
     return { sessionId, pid: process.pid };
   }
 
-  start(provider: ProviderId, prompt: string, context: IsolationContext) {
-    const contract = this.contracts().find((item) => item.provider === provider);
-    if (!contract?.compatible) throw new Error(contract?.remediation ?? "Provider is unavailable.");
+  start(provider: ProviderId, prompt: string, context: IsolationContext, options: { workspaceWrite?: boolean } = {}) {
     if (this.sessions.has(context.sessionId)) throw new Error("Session is already running.");
     const command = resolveProviderCommand(provider);
     if (!command) throw new Error(`${provider === "codex" ? "OpenAI Codex" : "Claude Code"} CLI could not be resolved.`);
@@ -187,11 +210,13 @@ export class ProviderManager extends EventEmitter {
       throw new Error(`${provider === "codex" ? "OpenAI Codex" : "Claude Code"} is installed, but Asteria's isolated provider profile is not authenticated. Sign in from Asteria Settings.`);
     }
     const shell = os.platform() === "win32" ? "powershell.exe" : command;
+    const providerArgs = providerStartArgs(provider, prompt, options);
+    const windowsFlags = provider === "codex"
+      ? `exec --json --sandbox ${options.workspaceWrite ? "workspace-write" : "read-only"}`
+      : `-p --output-format stream-json --verbose --permission-mode ${options.workspaceWrite ? "acceptEdits" : "plan"}`;
     const args = os.platform() === "win32"
-      ? ["-NoProfile", "-Command", `& '${command.replaceAll("'", "''")}' ${provider === "codex" ? "exec --json" : "-p --output-format stream-json"} -- $input`, prompt]
-      : provider === "codex"
-        ? ["exec", "--json", prompt]
-        : ["-p", "--output-format", "stream-json", "--verbose", prompt];
+      ? ["-NoProfile", "-Command", `& '${command.replaceAll("'", "''")}' ${windowsFlags} -- $input`, prompt]
+      : providerArgs;
     const process = pty.spawn(shell, args, {
       name: "xterm-256color",
       cols: 120,
@@ -229,9 +254,38 @@ export function normalizeEvent(chunk: string) {
   let detail = chunk.trim();
   let type = "message";
   try {
-    const parsed = JSON.parse(chunk);
-    detail = parsed.message?.content ?? parsed.content ?? parsed.text ?? chunk.trim();
-    type = parsed.type?.includes("tool") ? "tool_result" : parsed.type?.includes("reason") ? "reasoning" : "message";
+    const parsed = JSON.parse(chunk) as Record<string, any>;
+    const contentText = (value: unknown): string | undefined => {
+      if (typeof value === "string") return value;
+      if (!Array.isArray(value)) return undefined;
+      const text = value
+        .map((item) => typeof item === "string" ? item : item && typeof item === "object"
+          ? (item as Record<string, unknown>).text ?? (item as Record<string, unknown>).content
+          : undefined)
+        .filter((item): item is string => typeof item === "string")
+        .join("");
+      return text || undefined;
+    };
+    const eventName = typeof parsed.type === "string" ? parsed.type : "provider_event";
+    const item = parsed.item && typeof parsed.item === "object" ? parsed.item as Record<string, unknown> : undefined;
+    const itemType = typeof item?.type === "string" ? item.type : "";
+    const message = parsed.message && typeof parsed.message === "object" ? parsed.message as Record<string, unknown> : undefined;
+    const visibleText =
+      (itemType === "agent_message" ? contentText(item?.text) : undefined)
+      ?? contentText(message?.content)
+      ?? contentText(parsed.delta?.text)
+      ?? contentText(parsed.content)
+      ?? contentText(parsed.text)
+      ?? contentText(parsed.result);
+    if (visibleText) {
+      detail = visibleText;
+      type = itemType === "agent_message" || eventName === "assistant" || eventName.includes("message") || eventName.includes("delta") || eventName === "result"
+        ? "message"
+        : eventName.includes("tool") || itemType.includes("command") ? "tool_result" : "reasoning";
+    } else {
+      detail = eventName.replaceAll("_", " ");
+      type = eventName.includes("tool") || itemType.includes("command") ? "tool_result" : "reasoning";
+    }
   } catch {
     // Some provider progress is plain text; preserve it as a local event.
   }

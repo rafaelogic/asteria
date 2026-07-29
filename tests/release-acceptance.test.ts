@@ -22,4 +22,16 @@ describe("release acceptance gates", () => {
       expect(() => readFileSync(`build/icons/${size}x${size}/apps/asteria.png`)).not.toThrow();
     }
   });
+  it("uses the crash-resistant Linux rendering path for installed launches", () => {
+    const installer = readFileSync("scripts/install-user-release.mjs", "utf8");
+    const main = readFileSync("electron/main.ts", "utf8");
+    expect(installer).toContain('const launchArguments = ["--ozone-platform=x11", "--disable-gpu", "--no-sandbox"]');
+    expect(installer).toContain('launchArguments.join(" ")');
+    expect(installer).toContain('StartupWMClass=asteria');
+    expect(installer).toContain('StartupNotify=true');
+    expect(installer).toContain('chmodSync(desktopEntry, 0o755)');
+    expect(main).toContain("app.disableHardwareAcceleration()");
+    expect(main).toContain('app.commandLine.appendSwitch("no-sandbox")');
+    expect(main).toContain("screen.getDisplayNearestPoint(screen.getCursorScreenPoint())");
+  });
 });
