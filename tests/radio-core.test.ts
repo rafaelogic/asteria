@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_RADIO_SETTINGS, accountCanRun, radioPolicyDecision, selectRaDioAccount } from "../src/radio";
+import { DEFAULT_RADIO_SETTINGS, accountCanRun, radioPolicyDecision, selectApplicationRaDioAccount, selectRaDioAccount } from "../src/radio";
 import type { ProviderAccountProfile } from "../src/types";
 
 function account(input: Partial<ProviderAccountProfile> & Pick<ProviderAccountProfile, "id" | "provider">): ProviderAccountProfile {
@@ -24,6 +24,15 @@ describe("RaDio account routing", () => {
 
   it("does not fabricate unavailable usage", () => {
     expect(accountCanRun(account({ id: "unknown", provider: "codex", usage: { source: "unavailable", capturedAt: "" } }), "asteria", "planner", [])).toBe(true);
+  });
+
+  it("routes application maintenance through an authenticated account profile", () => {
+    const profiles = [
+      account({ id: "legacy-claim", provider: "codex", authenticated: false }),
+      account({ id: "codex-connected", provider: "codex", authenticated: true }),
+      account({ id: "claude-connected", provider: "claude", authenticated: true })
+    ];
+    expect(selectApplicationRaDioAccount(profiles, "codex", ["structured-stream"])?.id).toBe("codex-connected");
   });
 });
 

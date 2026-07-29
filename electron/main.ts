@@ -39,7 +39,7 @@ import { RaDioAccountVault } from "./radio/account-vault.js";
 import { RaDioCore } from "./radio/core.js";
 import { SkillRegistry } from "./radio/skills/registry.js";
 import { SkillRuntime } from "./radio/skills/runtime.js";
-import { selectRaDioAccount } from "../src/radio.js";
+import { selectApplicationRaDioAccount, selectRaDioAccount } from "../src/radio.js";
 import { z } from "zod";
 import { execFile, spawn, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
@@ -350,12 +350,16 @@ async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, r
   await mkdir(workspace, { recursive: true, mode: 0o700 });
   if (state.source) await validateAsteriaSource(state.source.path);
   const sessionId = `maintenance_${responseId.slice(0, 8)}`;
-  const context = await createIsolationContext(app.getPath("userData"), sessionId, workspace, state.provider);
-  sessionContext.set(sessionId, { projectId: "application", runId: "maintenance", role: "RaDio", provider: state.provider, kind: "maintenance", chatMessageId: responseId });
+  const account = selectApplicationRaDioAccount(accountVault.list(), state.provider, ["structured-stream", "cancellation", "isolated-home", "tool-events"]);
+  const context = await createIsolationContext(app.getPath("userData"), sessionId, workspace, state.provider, account?.id);
+  sessionContext.set(sessionId, { projectId: "application", runId: "maintenance", role: "RaDio", provider: state.provider, kind: "maintenance", chatMessageId: responseId, profileId: account?.id });
   const projects = store.projects.list();
   const openIncidents = projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved"));
   const install = await readUserInstallState();
   try {
+    if (!account && !providers.isAuthenticated(state.provider, context)) {
+      throw new Error(`Maintenance RaDio needs an authenticated ${state.provider === "codex" ? "OpenAI Codex" : "Claude Code"} account. Open Settings → Provider account pool and sign in or reconnect an account.`);
+    }
     providers.start(state.provider, `${radio.governingPrompt()}\nYou are Maintenance RaDio, isolated from Orbit chats. Discuss only Asteria application health, installation, recovery, incidents, and maintenance reports. Never reveal the source path, credentials, hidden reasoning, raw provider conversations, or unrelated Orbit content. ${state.source ? "A validated Asteria source repository is available to this session." : "No source repository is available; answer from normalized application state only and do not inspect or edit code."}\nInstalled version: ${install.currentVersion ?? app.getVersion()}\nRollback ready: ${install.rollbackReady}\nOrbit count: ${projects.length}\nOpen application-relevant incidents: ${openIncidents.length}\nOwner request: ${redactSecrets(body)}`, context);
   } catch (error) {
     sessionContext.delete(sessionId);

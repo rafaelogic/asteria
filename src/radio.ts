@@ -55,6 +55,20 @@ export function selectRaDioAccount(
     })[0];
 }
 
+export function selectApplicationRaDioAccount(
+  profiles: ProviderAccountProfile[],
+  provider: ProviderAccountProfile["provider"],
+  requiredCapabilities: string[]
+) {
+  return profiles
+    .filter((profile) => profile.provider === provider)
+    .filter((profile) => accountCanRun(profile, "application", "planner", requiredCapabilities))
+    .sort((left, right) => {
+      const capacity = (right.usage.remainingPercent ?? -1) - (left.usage.remainingPercent ?? -1);
+      return capacity || left.failureRate - right.failureRate || left.order - right.order;
+    })[0];
+}
+
 export function radioPolicyDecision(input: {
   settings: RaDioSettings;
   risk: RiskClassification;
