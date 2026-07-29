@@ -65,6 +65,12 @@ function configureCredentialBackend() {
   if (safeStorage.isEncryptionAvailable()) {
     return;
   }
+  const linuxBasicBackend = process.platform === "linux" && app.commandLine.getSwitchValue("password-store") === "basic";
+  if (linuxBasicBackend) {
+    safeStorage.setUsePlainTextEncryption(true);
+    degradedCredentialStorage = true;
+    return;
+  }
   const fixtureMode = !app.isPackaged && Boolean(process.env.ASTERIA_TEST_STORAGE_KEY);
   if (fixtureMode) {
     safeStorage.setUsePlainTextEncryption(true);

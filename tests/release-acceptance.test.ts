@@ -17,6 +17,9 @@ describe("release acceptance gates", () => {
   it("packages the Asteria identity and a concrete Linux icon source", () => {
     expect(manifest.build.appId).toBe("dev.asteria.desktop");
     expect(manifest.build.productName).toBe("Asteria");
-    expect(manifest.build.linux.icon).toBe("build/icon.png");
+    expect(manifest.build.linux.icon).toBe("build/icons/512x512/apps/asteria.png");
+    for (const size of [16, 24, 32, 48, 64, 128, 256, 512]) {
+      expect(() => readFileSync(`build/icons/${size}x${size}/apps/asteria.png`)).not.toThrow();
+    }
   });
 });

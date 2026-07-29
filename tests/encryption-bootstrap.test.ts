@@ -7,8 +7,12 @@ describe("clean-install encryption contract", () => {
   const accountVault = readFileSync("electron/radio/account-vault.ts", "utf8");
   const manifest = JSON.parse(readFileSync("package.json", "utf8")) as { build: { linux: { executableArgs?: string[] } } };
 
-  it("fails closed when the OS credential vault is unavailable outside tests", () => {
+  it("fails closed except for Asteria's explicit, visibly degraded Linux basic backend", () => {
     expect(main).toContain("safeStorage.isEncryptionAvailable()");
+    expect(main).toContain('process.platform === "linux" && app.commandLine.getSwitchValue("password-store") === "basic"');
+    expect(main).toContain("safeStorage.setUsePlainTextEncryption(true)");
+    expect(main).toContain("degradedCredentialStorage = true");
+    expect(main).toContain("Linux keyring unavailable");
     expect(main).toContain("will not create an unencrypted application profile");
     expect(manifest.build.linux.executableArgs ?? []).not.toContain("--password-store=basic");
   });
