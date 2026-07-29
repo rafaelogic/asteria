@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -117,11 +117,12 @@ const current = linkTarget(currentLink) ?? legacySnapTarget();
 const snapshot = snapshotStorage(manifest.version);
 if (current && current !== versionPath) atomicLink(current, previousLink);
 atomicLink(versionPath, currentLink);
-writeFileSync(path.join(binHome, "asteria"), `#!/bin/sh\nexec "${currentLink}/asteria" "$@"\n`, { mode: 0o755 });
-writeFileSync(path.join(dataHome, "applications", "asteria.desktop"), `[Desktop Entry]\nName=Asteria\nComment=Agentic workflow control plane\nExec=${path.join(binHome, "asteria")}\nIcon=asteria\nType=Application\nCategories=Development;\n`, { mode: 0o644 });
+writeFileSync(path.join(binHome, "asteria"), `#!/bin/sh\nunset ELECTRON_RUN_AS_NODE\nexec "${currentLink}/asteria" "$@"\n`, { mode: 0o755 });
+writeFileSync(path.join(dataHome, "applications", "asteria.desktop"), `[Desktop Entry]\nName=Asteria\nComment=Agentic workflow control plane\nExec=${path.join(binHome, "asteria")}\nTryExec=${path.join(binHome, "asteria")}\nIcon=asteria\nTerminal=false\nType=Application\nStartupWMClass=Asteria\nDBusActivatable=false\nCategories=Development;\n`, { mode: 0o644 });
 const icon = path.join(versionPath, "resources", "app.asar.unpacked", "build", "icon.png");
 const fallbackIcon = path.resolve("build/icons/512x512/apps/asteria.png");
 if (existsSync(icon) || existsSync(fallbackIcon)) cpSync(existsSync(icon) ? icon : fallbackIcon, path.join(dataHome, "icons", "hicolor", "512x512", "apps", "asteria.png"));
+spawnSync("update-desktop-database", [path.join(dataHome, "applications")], { env: applicationEnvironment, stdio: "ignore" });
 for (const name of readdirSync(versionsRoot).filter((name) => ![path.basename(versionPath), current ? path.basename(current) : ""].includes(name))) rmSync(path.join(versionsRoot, name), { recursive: true, force: true });
 const state = {
   status: "healthy",
