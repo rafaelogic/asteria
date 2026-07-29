@@ -120,7 +120,7 @@ atomicLink(versionPath, currentLink);
 writeFileSync(path.join(binHome, "asteria"), `#!/bin/sh\nunset ELECTRON_RUN_AS_NODE\nexec "${currentLink}/asteria" "$@"\n`, { mode: 0o755 });
 // Mask the legacy system package's desktop-file ID so application launchers cannot
 // resolve Asteria to /opt/Asteria after a user-local release is installed.
-writeFileSync(path.join(dataHome, "applications", "asteria.desktop"), "[Desktop Entry]\nHidden=true\nType=Application\n", { mode: 0o644 });
+writeFileSync(path.join(dataHome, "applications", "asteria.desktop"), "[Desktop Entry]\nName=Asteria legacy launcher mask\nHidden=true\nType=Application\n", { mode: 0o644 });
 writeFileSync(path.join(dataHome, "applications", "dev.asteria.Asteria.desktop"), `[Desktop Entry]\nName=Asteria\nComment=Agentic workflow control plane\nExec=${path.join(binHome, "asteria")}\nTryExec=${path.join(binHome, "asteria")}\nIcon=asteria\nTerminal=false\nType=Application\nStartupWMClass=Asteria\nDBusActivatable=false\nCategories=Development;\n`, { mode: 0o644 });
 const icon = path.join(versionPath, "resources", "app.asar.unpacked", "build", "icon.png");
 const fallbackIcon = path.resolve("build/icons/512x512/apps/asteria.png");
