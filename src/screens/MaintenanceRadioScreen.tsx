@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowUpIcon, CheckCircleIcon, FolderOpenIcon, HardDrivesIcon, PulseIcon, RobotIcon, StopCircleIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 import { MarkdownPreview } from "../components/RichPreview";
 import type { ApplicationMaintenanceSettings, Project, UserInstallState } from "../types";
+import { useRadioReadiness } from "../hooks/useRadioReadiness";
 
 export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: Project[]; onOpenProject: (projectId: string) => void }) {
   const [install, setInstall] = useState<UserInstallState>({ rollbackReady: false });
@@ -9,6 +10,7 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
   const [body, setBody] = useState("");
   const [selectedOrbit, setSelectedOrbit] = useState("");
   const [error, setError] = useState("");
+  const readiness = useRadioReadiness(state?.provider ?? "codex");
   const localOrbits = projects.filter((project) => project.repositoryPath);
   useEffect(() => {
     void window.asteria?.installer.state().then(setInstall);
@@ -24,7 +26,7 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
   const pending = state?.pendingOperation;
 
   const send = async () => {
-    if (!window.asteria || !state || !body.trim()) return;
+    if (!window.asteria || !state || !body.trim() || !readiness.ready) return;
     setError("");
     try {
       const latest = await window.asteria.maintenance.state();
@@ -69,7 +71,8 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
           </div>
         </article>) : <div className="maintenance-chat-empty"><RobotIcon weight="duotone" /><h3>Ask Maintenance RaDio</h3><p>Status and reports need no repository. Source access is requested only when code work begins.</p></div>}</div>
         {error && <p className="radio-send-error" role="alert">{error}</p>}
-        <footer><textarea aria-label="Message Maintenance RaDio" value={body} onChange={(event) => setBody(event.target.value)} placeholder="Ask about Asteria health, reports, or maintenance…" onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") void send(); }} /><button aria-label="Send to Maintenance RaDio" disabled={!body.trim()} onClick={() => void send()}><ArrowUpIcon weight="bold" /></button></footer>
+        {!readiness.ready && <div className="radio-readiness"><strong>{readiness.loading ? "Checking RaDio prerequisites…" : "Maintenance RaDio is not ready yet"}</strong>{readiness.checks.map((check) => <p className={check.ready ? "ready" : ""} key={check.label}><b>{check.ready ? "Ready" : "Required"}</b><span>{check.label}<small>{check.detail}</small></span></p>)}<button className="button secondary" onClick={() => void readiness.refresh()}>Check again</button></div>}
+        <footer><textarea aria-label="Message Maintenance RaDio" disabled={!readiness.ready} value={body} onChange={(event) => setBody(event.target.value)} placeholder={readiness.ready ? "Ask about Asteria health, reports, or maintenance…" : "Complete RaDio setup before chatting"} onKeyDown={(event) => { if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) { event.preventDefault(); void send(); } }} /><button aria-label="Send to Maintenance RaDio" disabled={!body.trim() || !readiness.ready} onClick={() => void send()}><ArrowUpIcon weight="bold" /></button></footer>
       </section>
       <section className="maintenance-feed">
         <header><div><span className="eyebrow">Health queue</span><h2>Maintenance reports</h2></div><span className={incidents.length ? "warning" : "success"}>{incidents.length ? "Needs review" : "All clear"}</span></header>

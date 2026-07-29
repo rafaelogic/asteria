@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowUpIcon, BrainIcon, CheckCircleIcon, FileIcon, PaperclipIcon, PauseIcon, PulseIcon, RobotIcon, StopCircleIcon, WarningIcon, WrenchIcon, XIcon } from "@phosphor-icons/react";
 import { MarkdownPreview } from "../components/RichPreview";
 import type { Project, RaDioChatAttachment, UserInstallState } from "../types";
+import { useRadioReadiness } from "../hooks/useRadioReadiness";
 
 const suggestions = ["What is the current health of this Orbit?", "Activate the right Star for open incidents", "Run the relevant checks", "Explain the latest Waypoint"];
 
@@ -15,6 +16,7 @@ export function RadioChatScreen({ project, onProject }: { project: Project; onPr
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState("");
   const [install, setInstall] = useState<UserInstallState>({ rollbackReady: false });
+  const readiness = useRadioReadiness(project.provider, project);
   const base = { projectId: project.id, runId: project.runId, expectedVersion: project.version };
   const openIncidents = useMemo(() => project.incidents.filter((item) => item.status !== "resolved"), [project.incidents]);
   useEffect(() => { void window.asteria?.installer.state().then(setInstall); }, [project.id]);
@@ -24,7 +26,7 @@ export function RadioChatScreen({ project, onProject }: { project: Project; onPr
     if (selectedFiles) setAttachments((current) => [...current, ...selectedFiles].slice(0, 20));
   };
   const send = async (value = body) => {
-    if (!value.trim() || !window.asteria || selected?.archived) return;
+    if (!value.trim() || !window.asteria || selected?.archived || !readiness.ready) return;
     setBusy(true);
     setSendError("");
     try {
@@ -71,10 +73,11 @@ export function RadioChatScreen({ project, onProject }: { project: Project; onPr
           </div>
         </article>) : <div className="radio-chat-empty"><RobotIcon weight="duotone" /><h2>RaDio is listening</h2><p>Ask about this Orbit or give RaDio a command. Safety policy is applied before every action.</p><div>{suggestions.map((item) => <button key={item} onClick={() => void send(item)}>{item}</button>)}</div></div>}</div>
         {!selected?.archived && <div className="radio-chat-composer">
+          {!readiness.ready && <div className="radio-readiness"><strong>{readiness.loading ? "Checking RaDio prerequisites…" : "RaDio is not ready yet"}</strong>{readiness.checks.map((check) => <p className={check.ready ? "ready" : ""} key={check.label}><b>{check.ready ? "Ready" : "Required"}</b><span>{check.label}<small>{check.detail}</small></span></p>)}<button className="button secondary" onClick={() => void readiness.refresh()}>Check again</button></div>}
           {sendError && <p className="radio-send-error" role="alert">{sendError}</p>}
           {attachments.length > 0 && <div className="chat-attachments">{attachments.map((attachment) => <span key={attachment.id} className={attachment.status}><FileIcon /><b>{attachment.name}</b><small>{attachment.status}</small><button aria-label={`Remove ${attachment.name}`} onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}><XIcon /></button></span>)}</div>}
-          <textarea aria-label="Message RaDio" value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") void send(); }} placeholder="Ask RaDio or direct the Orbit…" />
-          <footer><button className="icon-button" aria-label="Attach files" onClick={() => void attach()}><PaperclipIcon /></button><span>Ctrl/⌘ + Enter to send</span><button className="send-button" aria-label="Send to RaDio" disabled={busy || !body.trim()} onClick={() => void send()}><ArrowUpIcon weight="bold" /></button></footer>
+          <textarea aria-label="Message RaDio" disabled={!readiness.ready} value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) { event.preventDefault(); void send(); } }} placeholder={readiness.ready ? "Ask RaDio or direct the Orbit…" : "Complete RaDio setup before chatting"} />
+          <footer><button className="icon-button" aria-label="Attach files" disabled={!readiness.ready} onClick={() => void attach()}><PaperclipIcon /></button><span>Enter to send · Ctrl/⌘ + Enter for a new line</span><button className="send-button" aria-label="Send to RaDio" disabled={busy || !body.trim() || !readiness.ready} onClick={() => void send()}><ArrowUpIcon weight="bold" /></button></footer>
         </div>}
       </section>
     </div>
