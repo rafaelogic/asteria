@@ -40,6 +40,7 @@ import { RaDioCore } from "./radio/core.js";
 import { SkillRegistry } from "./radio/skills/registry.js";
 import { SkillRuntime } from "./radio/skills/runtime.js";
 import { PreviewManager, type PreviewEvidence, type PreviewWindow } from "./radio/preview-manager.js";
+import { HostValidationManager, validationChecksForMaintenance, type HostValidationEvidence, type HostValidationId } from "./radio/validation-manager.js";
 import { selectApplicationRaDioAccount, selectRaDioAccount } from "../src/radio.js";
 import { z } from "zod";
 import { execFile, spawn, spawnSync } from "node:child_process";
@@ -53,9 +54,10 @@ let telemetry: LocalTelemetry;
 let accountVault: RaDioAccountVault;
 let radio: RaDioCore;
 let previewManager: PreviewManager;
+const hostValidationManager = new HostValidationManager();
 const skillRegistry = new SkillRegistry();
 const skillRuntime = new SkillRuntime(skillRegistry);
-const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude"; kind?: "workflow" | "chat" | "maintenance" | "authentication" | "repair" | "verification"; chatMessageId?: string; incidentId?: string; worktreePath?: string; profileId?: string; authUrlOpened?: boolean; hostPreview?: boolean }>();
+const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude"; kind?: "workflow" | "chat" | "maintenance" | "authentication" | "repair" | "verification"; chatMessageId?: string; incidentId?: string; worktreePath?: string; profileId?: string; authUrlOpened?: boolean; hostPreview?: boolean; hostValidation?: HostValidationId[] }>();
 const pendingAttachments = new Map<string, Map<string, import("../src/types.js").RaDioChatAttachment>>();
 const runningProjectSessions = new Map<string, Set<string>>();
 const failedProjectSessions = new Set<string>();
@@ -411,40 +413,48 @@ function previewEvidenceSummary(evidence: PreviewEvidence) {
   return `Asteria host preview verified at ${evidence.url}. Electron loaded "${evidence.title}", rendered ${evidence.rootText.length} text characters, captured screenshot digest ${evidence.screenshotDigest.slice(0, 12)}, and observed ${evidence.consoleErrors.length} console errors.`;
 }
 
-async function finishMaintenancePreview(sessionId: string, messageId: string) {
-  try {
-    const evidence = await previewManager.verify(sessionId);
-    const current = store.maintenance.get();
-    const now = new Date().toISOString();
-    const updated = store.maintenance.save({
-      ...current,
-      chat: {
-        ...current.chat,
-        updatedAt: now,
-        messages: current.chat.messages.map((message) => message.id === messageId
-          ? { ...message, body: `${message.body}${message.body ? "\n\n" : ""}Host preview evidence: ${previewEvidenceSummary(evidence)}` }
-          : message)
+function validationEvidenceSummary(evidence: HostValidationEvidence) {
+  const checks = evidence.checks.map((check) => `${check.label}: ${check.passed ? "passed" : `failed (exit ${check.exitCode ?? "spawn error"})`}`).join("; ");
+  return `trusted host validation ${evidence.passed ? "passed" : "failed"} — ${checks}. Evidence digest ${evidence.digest.slice(0, 12)}.`;
+}
+
+async function finishMaintenanceHostWork(sessionId: string, context: NonNullable<ReturnType<typeof sessionContext.get>>) {
+  const notes: string[] = [];
+  if (context.hostValidation?.length && context.worktreePath) {
+    try {
+      const evidence = await hostValidationManager.run(context.worktreePath, context.hostValidation);
+      notes.push(`Host validation evidence: ${validationEvidenceSummary(evidence)}`);
+      const failures = evidence.checks.filter((check) => !check.passed);
+      for (const failure of failures) {
+        notes.push(`${failure.label} output:\n${failure.output.slice(-2_000) || "No process output was captured."}`);
       }
-    }, current.version, `maintenance_preview_${messageId}_${Date.now()}`);
-    window?.webContents.send("maintenance:updated", updated);
-  } catch (error) {
-    const current = store.maintenance.get();
-    const now = new Date().toISOString();
-    const detail = redactSecrets(error instanceof Error ? error.message : "Host preview verification failed.");
-    const updated = store.maintenance.save({
-      ...current,
-      chat: {
-        ...current.chat,
-        updatedAt: now,
-        messages: current.chat.messages.map((message) => message.id === messageId
-          ? { ...message, body: `${message.body}${message.body ? "\n\n" : ""}Host preview evidence: verification failed — ${detail}` }
-          : message)
-      }
-    }, current.version, `maintenance_preview_failure_${messageId}_${Date.now()}`);
-    window?.webContents.send("maintenance:updated", updated);
-  } finally {
-    await previewManager.stop(sessionId);
+    } catch (error) {
+      notes.push(`Host validation evidence: validation failed — ${redactSecrets(error instanceof Error ? error.message : "Trusted host validation could not run.")}`);
+    }
   }
+  if (context.hostPreview) {
+    try {
+      notes.push(`Host preview evidence: ${previewEvidenceSummary(await previewManager.verify(sessionId))}`);
+    } catch (error) {
+      notes.push(`Host preview evidence: verification failed — ${redactSecrets(error instanceof Error ? error.message : "Host preview verification failed.")}`);
+    } finally {
+      await previewManager.stop(sessionId);
+    }
+  }
+  if (!notes.length || !context.chatMessageId) return;
+  const current = store.maintenance.get();
+  const now = new Date().toISOString();
+  const updated = store.maintenance.save({
+    ...current,
+    chat: {
+      ...current.chat,
+      updatedAt: now,
+      messages: current.chat.messages.map((message) => message.id === context.chatMessageId
+        ? { ...message, body: `${message.body}${message.body ? "\n\n" : ""}${notes.join("\n\n")}` }
+        : message)
+    }
+  }, current.version, `maintenance_host_evidence_${context.chatMessageId}_${Date.now()}`);
+  window?.webContents.send("maintenance:updated", updated);
 }
 
 async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, responseId: string, body: string) {
@@ -455,6 +465,7 @@ async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, r
   const account = selectApplicationRaDioAccount(accountVault.list(), state.provider, ["structured-stream", "cancellation", "isolated-home", "tool-events"]);
   const context = await createIsolationContext(app.getPath("userData"), sessionId, workspace, state.provider, account?.id);
   const hostPreview = maintenanceUsesHostPreview(Boolean(state.source), body);
+  const hostValidation = validationChecksForMaintenance(Boolean(state.source), body);
   let previewEvidence: PreviewEvidence | undefined;
   if (hostPreview) {
     try {
@@ -471,12 +482,12 @@ async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, r
       return failed;
     }
   }
-  sessionContext.set(sessionId, { projectId: "application", runId: "maintenance", role: "RaDio", provider: state.provider, kind: "maintenance", chatMessageId: responseId, profileId: account?.id, hostPreview });
+  sessionContext.set(sessionId, { projectId: "application", runId: "maintenance", role: "RaDio", provider: state.provider, kind: "maintenance", chatMessageId: responseId, profileId: account?.id, hostPreview, hostValidation, worktreePath: state.source?.path });
   const projects = store.projects.list();
   const openIncidents = projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved"));
   const install = await readUserInstallState();
   try {
-    providers.start(state.provider, `${radio.governingPrompt()}\nYou are Maintenance RaDio, isolated from Orbit chats. Discuss only Asteria application health, installation, recovery, incidents, and maintenance reports. Never reveal the source path, credentials, hidden reasoning, raw provider conversations, or unrelated Orbit content. Never start or probe a localhost preview listener from the provider sandbox; only Asteria's trusted host may own preview processes and renderer evidence. ${state.source ? "A validated Asteria source repository is available. You may inspect and edit files only inside that repository when the owner requests code changes; preserve unrelated changes and run proportionate checks." : "No source repository is available; answer from normalized application state only and do not inspect or edit code."}${previewEvidence ? `\nAsteria's trusted host already started and loaded the project preview outside your provider sandbox. Initial evidence: ${previewEvidenceSummary(previewEvidence)} Asteria will reload and capture final host evidence after your run.` : ""}\nInstalled version: ${install.currentVersion ?? app.getVersion()}\nRollback ready: ${install.rollbackReady}\nOrbit count: ${projects.length}\nOpen application-relevant incidents: ${openIncidents.length}\nOwner request: ${redactSecrets(body)}`, context, { workspaceWrite: Boolean(state.source) });
+    providers.start(state.provider, `${radio.governingPrompt()}\nYou are Maintenance RaDio, isolated from Orbit chats. Discuss only Asteria application health, installation, recovery, incidents, and maintenance reports. Never reveal the source path, credentials, hidden reasoning, raw provider conversations, or unrelated Orbit content. Never start or probe a localhost preview listener from the provider sandbox; only Asteria's trusted host may own preview processes and renderer evidence. Never claim that a provider-sandbox EPERM result is the final validation result: after this session, Asteria's trusted host will run the fixed allowlisted validation checks and append authoritative evidence to this response. ${state.source ? "A validated Asteria source repository is available. You may inspect and edit files only inside that repository when the owner requests code changes; preserve unrelated changes and run proportionate checks." : "No source repository is available; answer from normalized application state only and do not inspect or edit code."}${previewEvidence ? `\nAsteria's trusted host already started and loaded the project preview outside your provider sandbox. Initial evidence: ${previewEvidenceSummary(previewEvidence)} Asteria will reload and capture final host evidence after your run.` : ""}${hostValidation.length ? `\nAfter your work, the trusted host will run these allowlisted checks outside the provider sandbox: ${hostValidation.join(", ")}. Do not attempt to expand or replace this command set.` : ""}\nInstalled version: ${install.currentVersion ?? app.getVersion()}\nRollback ready: ${install.rollbackReady}\nOrbit count: ${projects.length}\nOpen application-relevant incidents: ${openIncidents.length}\nOwner request: ${redactSecrets(body)}`, context, { workspaceWrite: Boolean(state.source) });
   } catch (error) {
     if (hostPreview) await previewManager.stop(sessionId);
     sessionContext.delete(sessionId);
@@ -541,7 +552,7 @@ providers.on("event", (sessionId: string, event) => {
     window?.webContents.send("maintenance:updated", updated);
     if (terminal) {
       sessionContext.delete(sessionId);
-      if (context.hostPreview) void finishMaintenancePreview(sessionId, context.chatMessageId);
+      if (context.hostPreview || context.hostValidation?.length) void finishMaintenanceHostWork(sessionId, context);
     }
     return;
   }
