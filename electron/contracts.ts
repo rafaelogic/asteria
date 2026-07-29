@@ -60,6 +60,7 @@ export const OnboardingSchema = z.object({
   githubConnected: z.boolean(),
   repository: z.string().max(500),
   repositoryPath: z.string().min(1).max(4096),
+  repositoryStoragePath: z.string().max(4096),
   projectName: z.string().min(1).max(120),
   idea: z.string().min(10).max(20_000),
   audience: z.string().max(2_000),
@@ -109,6 +110,7 @@ export const RaDioHandoffSchema = MutationSchema.extend({
 export const CloneRepositorySchema = z.object({
   cloneUrl: z.string().url().max(2048),
   projectName: z.string().min(1).max(120),
+  storagePath: z.string().min(1).max(4096),
   idempotencyKey: IdempotencyKeySchema
 });
 export const WorktreeSchema = MutationSchema.extend({

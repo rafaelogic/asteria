@@ -17,6 +17,7 @@ const initialDraft: OnboardingDraft = {
   githubConnected: false,
   repository: "",
   repositoryPath: "",
+  repositoryStoragePath: "",
   projectName: "",
   idea: "",
   audience: "",
@@ -89,7 +90,7 @@ export function OnboardingScreen({ onComplete, onExplore, onCancel, existingProj
 
   const canContinue = useMemo(() => {
     if (draft.step === 0) return draft.providers.length > 0;
-    if (draft.step === 2) return Boolean(draft.repository || draft.repositoryPath);
+    if (draft.step === 2) return Boolean(draft.repositoryPath || (draft.repository && draft.repositoryStoragePath));
     if (draft.step === 3) return draft.projectName.trim().length > 1 && draft.idea.trim().length >= 10;
     return true;
   }, [draft]);
@@ -113,9 +114,16 @@ export function OnboardingScreen({ onComplete, onExplore, onCancel, existingProj
     try {
       await window.asteria?.repositories.status(folder);
       setError("");
-      patch({ repositoryPath: folder, repository: "", projectName: draft.projectName || folder.split(/[\\/]/).pop() || "" });
+      patch({ repositoryPath: folder, repository: "", repositoryStoragePath: "", projectName: draft.projectName || folder.split(/[\\/]/).pop() || "" });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Choose the root folder of a Git repository.");
+    }
+  };
+  const chooseStorage = async () => {
+    const folder = await window.asteria?.system.selectFolder();
+    if (folder) {
+      setError("");
+      patch({ repositoryStoragePath: folder });
     }
   };
   const authenticate = async (provider: ProviderId) => {
@@ -180,7 +188,8 @@ export function OnboardingScreen({ onComplete, onExplore, onCancel, existingProj
             throw new Error("Enter a GitHub repository as owner/name, or choose a local Git repository.");
           }
           const cloneUrl = remote?.cloneUrl ?? `https://github.com/${draft.repository}.git`;
-          const cloned = await window.asteria.repositories.clone({ cloneUrl, projectName: draft.projectName, idempotencyKey: `clone_${crypto.randomUUID()}` });
+          if (!draft.repositoryStoragePath) throw new Error("Choose where RaDio should store this project.");
+          const cloned = await window.asteria.repositories.clone({ cloneUrl, projectName: draft.projectName, storagePath: draft.repositoryStoragePath, idempotencyKey: `clone_${crypto.randomUUID()}` });
           completedDraft = { ...draft, repositoryPath: cloned.path };
         }
         if (!completedDraft.repositoryPath) throw new Error("Choose or clone a local Git repository before creating the project.");
@@ -231,6 +240,7 @@ export function OnboardingScreen({ onComplete, onExplore, onCancel, existingProj
             {draft.step === 2 && <WizardSection icon={<FolderOpenIcon />} eyebrow="Repository" title="Select the project workspace" description="Asteria creates isolated task worktrees without changing your original working copy.">
               <button className="repository-card" onClick={() => void chooseFolder()}><FolderOpenIcon /><span><strong>{draft.repositoryPath || "Choose a local Git repository"}</strong><small>Original files remain outside agent session homes</small></span><ArrowRightIcon /></button>
               {draft.githubConnected && <label className="form-field"><span>GitHub repository</span>{repositories.length ? <select value={draft.repository} onChange={(event) => patch({ repository: event.target.value, repositoryPath: "", projectName: draft.projectName || event.target.value.split("/").pop() || "" })}><option value="">Choose a repository…</option>{repositories.map((repository) => <option value={repository.fullName} key={repository.id}>{repository.fullName}{repository.private ? " · Private" : ""}</option>)}</select> : <input value={draft.repository} onChange={(event) => patch({ repository: event.target.value, repositoryPath: "", projectName: draft.projectName || event.target.value.split("/").pop() || "" })} placeholder="organization/repository" />}</label>}
+              {draft.repository && !draft.repositoryPath && <button className="repository-card storage-card" onClick={() => void chooseStorage()}><FolderOpenIcon /><span><strong>{draft.repositoryStoragePath || "Choose where RaDio should store the project"}</strong><small>RaDio will clone {draft.repository} into this folder</small></span><ArrowRightIcon /></button>}
               {error && <p className="wizard-error">{error}</p>}
             </WizardSection>}
             {draft.step === 3 && <WizardSection icon={<SparkleIcon />} eyebrow="Product intent" title="What should this project become?" description="Give the Planner enough context to create measurable requirements before any code is changed.">
@@ -263,7 +273,7 @@ export function OnboardingScreen({ onComplete, onExplore, onCancel, existingProj
               <div className="retention-facts"><span><small>Retention</small><strong>30 days</strong></span><span><small>Storage quota</small><strong>5 GB</strong></span><span><small>Uploads</small><strong className="success">None</strong></span></div>
             </WizardSection>}
             {draft.step === 7 && <WizardSection icon={<CheckCircleIcon />} eyebrow="Ready to launch" title={`Create ${draft.projectName || "your project"} starpath`} description="Asteria will begin with product definition under the selected RaDio authority.">
-              <div className="review-list"><ReviewRow label="Provider" value={draft.defaultProvider === "codex" ? "OpenAI Codex" : "Claude Code"} /><ReviewRow label="Repository" value={draft.repository || draft.repositoryPath || "Local repository"} /><ReviewRow label="Objective" value={draft.idea || "Product definition required"} /><ReviewRow label="RaDio" value={draft.radio.mode === "full_autonomous" ? `Ascendant · ${draft.radio.mergeProductionEnabled ? "production enabled" : "staging only"}` : "Guided · external gates"} /><ReviewRow label="Starpath" value="Scout → Observation · adaptive Stars" /><ReviewRow label="Telemetry" value={draft.telemetry.enabled ? "Local encrypted · 30 days" : "Paused"} /></div>
+              <div className="review-list"><ReviewRow label="Provider" value={draft.defaultProvider === "codex" ? "OpenAI Codex" : "Claude Code"} /><ReviewRow label="Repository" value={draft.repository || draft.repositoryPath || "Local repository"} /><ReviewRow label="Stored in" value={draft.repositoryStoragePath || draft.repositoryPath} /><ReviewRow label="Objective" value={draft.idea || "Product definition required"} /><ReviewRow label="RaDio" value={draft.radio.mode === "full_autonomous" ? `Ascendant · ${draft.radio.mergeProductionEnabled ? "production enabled" : "staging only"}` : "Guided · external gates"} /><ReviewRow label="Starpath" value="Scout → Observation · adaptive Stars" /><ReviewRow label="Telemetry" value={draft.telemetry.enabled ? "Local encrypted · 30 days" : "Paused"} /></div>
               {error && <p className="wizard-error">{error}</p>}
             </WizardSection>}
           </motion.section>

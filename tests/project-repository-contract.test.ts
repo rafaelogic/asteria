@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OnboardingSchema, ProjectUpdateSchema } from "../electron/contracts";
+import { CloneRepositorySchema, OnboardingSchema, ProjectUpdateSchema } from "../electron/contracts";
 
 describe("project repository contract", () => {
   it("requires a local repository path before project creation", () => {
@@ -19,5 +19,15 @@ describe("project repository contract", () => {
       }
     });
     expect(result.success).toBe(true);
+  });
+
+  it("requires an owner-selected storage folder before RaDio clones", () => {
+    const base = {
+      cloneUrl: "https://github.com/example/project.git",
+      projectName: "Example",
+      idempotencyKey: "clone_123456789"
+    };
+    expect(CloneRepositorySchema.safeParse(base).success).toBe(false);
+    expect(CloneRepositorySchema.safeParse({ ...base, storagePath: "/workspace/projects" }).success).toBe(true);
   });
 });

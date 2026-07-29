@@ -43,10 +43,10 @@ async function snapshotUnbornRepository(repositoryRoot: string, destination: str
   }
 }
 
-export async function cloneRepository(dataRoot: string, cloneUrl: string, projectName: string) {
+export async function cloneRepository(dataRoot: string, cloneUrl: string, projectName: string, storagePath?: string) {
   const parsed = new URL(cloneUrl);
   if (parsed.protocol !== "https:" || !["github.com"].includes(parsed.hostname)) throw new Error("Only HTTPS GitHub clone URLs are allowed.");
-  const root = path.join(dataRoot, "repositories");
+  const root = storagePath ? await realpath(storagePath) : path.join(dataRoot, "repositories");
   await mkdir(root, { recursive: true, mode: 0o700 });
   const destination = path.join(root, `${slug(projectName)}-${Date.now().toString(36)}`);
   await git(["clone", "--origin", "origin", "--", parsed.toString(), destination]);

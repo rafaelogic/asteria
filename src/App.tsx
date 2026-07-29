@@ -190,10 +190,13 @@ export function App() {
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Stage execution could not start.";
       if (detail.includes("local repository is required")) {
+        const canClone = activeProject.visibility !== "Local" && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(activeProject.repository);
         setDialog({
-          title: "Connect this project to its repository",
-          detail: "This existing project does not have a valid local Git repository. Choose its repository root and Asteria will save the project binding, then retry this stage.",
-          confirmLabel: "Choose repository",
+          title: canClone ? "Choose where RaDio should store this project" : "Connect this project to its repository",
+          detail: canClone
+            ? `RaDio will clone ${activeProject.repository}, bind the resulting local Git repository to this Orbit, and retry the Coordinate.`
+            : "This existing local project does not have a valid Git repository binding. Choose its repository root and Asteria will save the binding, then retry this Coordinate.",
+          confirmLabel: canClone ? "Choose storage folder" : "Choose repository",
           cancelLabel: "Not now",
           onConfirm: () => { void attachRepositoryAndExecute(); }
         });
@@ -208,15 +211,24 @@ export function App() {
     try {
       const folder = await window.asteria.system.selectFolder();
       if (!folder) return;
-      await window.asteria.repositories.status(folder);
+      const canClone = activeProject.visibility !== "Local" && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(activeProject.repository);
+      const repositoryPath = canClone
+        ? (await window.asteria.repositories.clone({
+            cloneUrl: `https://github.com/${activeProject.repository}.git`,
+            projectName: activeProject.name,
+            storagePath: folder,
+            idempotencyKey: `clone_${crypto.randomUUID()}`
+          })).path
+        : folder;
+      await window.asteria.repositories.status(repositoryPath);
       const bound = await window.asteria.projects.update({
         projectId: activeProject.id,
         runId: activeProject.runId,
         expectedVersion: activeProject.version,
         idempotencyKey: `repository_${crypto.randomUUID()}`,
         patch: {
-          repositoryPath: folder,
-          repository: activeProject.repository || folder.split(/[\\/]/).pop() || "Local repository"
+          repositoryPath,
+          repository: activeProject.repository || repositoryPath.split(/[\\/]/).pop() || "Local repository"
         }
       });
       replaceProject(bound);

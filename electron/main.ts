@@ -413,7 +413,7 @@ ipcMain.handle("radio:emergency-stop", (_event, raw) => {
 
 ipcMain.handle("repositories:clone", async (_event, raw) => {
   const input = CloneRepositorySchema.parse(raw);
-  return cloneRepository(app.getPath("userData"), input.cloneUrl, input.projectName);
+  return cloneRepository(app.getPath("userData"), input.cloneUrl, input.projectName, input.storagePath);
 });
 ipcMain.handle("repositories:status", (_event, repositoryPath: string) => repositoryStatus(repositoryPath));
 ipcMain.handle("repositories:create-worktree", async (_event, raw) => {

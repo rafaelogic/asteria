@@ -423,6 +423,7 @@ export interface OnboardingDraft {
   githubConnected: boolean;
   repository: string;
   repositoryPath: string;
+  repositoryStoragePath: string;
   projectName: string;
   idea: string;
   audience: string;
@@ -474,7 +475,7 @@ export interface AsteriaApi {
     execute(input: MutationInput): Promise<Project>;
   };
   repositories: {
-    clone(input: { cloneUrl: string; projectName: string; idempotencyKey: string }): Promise<{ path: string }>;
+    clone(input: { cloneUrl: string; projectName: string; storagePath: string; idempotencyKey: string }): Promise<{ path: string }>;
     status(path: string): Promise<{ branch: string; clean: boolean; changedFiles: string[] }>;
     createWorktree(input: MutationInput & { taskId: string; branch: string }): Promise<{ path: string; branch: string }>;
     checkpoint(input: MutationInput & { message: string; worktreePath: string }): Promise<{ commit: string }>;
