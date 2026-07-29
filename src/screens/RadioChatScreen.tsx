@@ -3,6 +3,7 @@ import { ArrowUpIcon, BrainIcon, CheckCircleIcon, FileIcon, PaperclipIcon, Pause
 import { MarkdownPreview } from "../components/RichPreview";
 import type { Project, RaDioChatAttachment, UserInstallState } from "../types";
 import { useRadioReadiness } from "../hooks/useRadioReadiness";
+import { ResponseActivity } from "../components/ResponseActivity";
 
 const suggestions = ["What is the current health of this Orbit?", "Activate the right Star for open incidents", "Run the relevant checks", "Explain the latest Waypoint"];
 
@@ -65,7 +66,8 @@ export function RadioChatScreen({ project, onProject }: { project: Project; onPr
         <div className="radio-messages">{selected?.messages.length ? selected.messages.map((message) => <article key={message.id} className={`radio-message ${message.author}`}>
           <span className="radio-message-avatar">{message.author === "radio" ? <RobotIcon weight="duotone" /> : "You"}</span>
           <div><header><strong>{message.author === "radio" ? "RaDio" : "Project owner"}</strong><time>{new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>{message.status === "streaming" && <i className="streaming-dot" />}</header>
-            {message.body ? <MarkdownPreview content={message.body} /> : message.status === "streaming" ? <p className="radio-thinking">RaDio is coordinating the response…</p> : null}
+            {message.body && <MarkdownPreview content={message.body} />}
+            {message.status === "streaming" && <ResponseActivity hasContent={Boolean(message.body)} />}
             {message.attachments.length > 0 && <div className="chat-attachments sent">{message.attachments.map((attachment) => <span key={attachment.id}><FileIcon /><b>{attachment.name}</b><small>{Math.ceil(attachment.size / 1024)} KB</small></span>)}</div>}
             {message.command && <div className={`chat-command ${message.command.status}`}><BrainIcon /><span><strong>{message.command.kind} command</strong><small>{message.command.policyReason}</small></span><b>{message.command.status}</b></div>}
             {message.cards.map((card) => <div className={`chat-execution-card ${card.status}`} key={card.id}>{card.status === "completed" ? <CheckCircleIcon /> : card.status === "failed" || card.status === "blocked" ? <WarningIcon /> : <PulseIcon />}<span><strong>{card.title}</strong><small>{card.detail}</small></span><b>{card.status}</b></div>)}

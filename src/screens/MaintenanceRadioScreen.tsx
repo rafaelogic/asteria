@@ -1,9 +1,10 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { ArrowUpIcon, CheckCircleIcon, FolderOpenIcon, HardDrivesIcon, LightbulbIcon, PulseIcon, RobotIcon, SparkleIcon, StopCircleIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowUpIcon, CheckCircleIcon, FolderOpenIcon, HardDrivesIcon, LightbulbIcon, MagicWandIcon, PulseIcon, RobotIcon, StopCircleIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { MarkdownPreview } from "../components/RichPreview";
 import type { ApplicationMaintenanceSettings, Project, UserInstallState } from "../types";
 import { useRadioReadiness } from "../hooks/useRadioReadiness";
+import { ResponseActivity } from "../components/ResponseActivity";
 
 const MaintenanceMarkdown = memo(MarkdownPreview);
 
@@ -82,6 +83,7 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
         <div className="maintenance-messages"><AnimatePresence initial={false}>{state?.chat.messages.length ? state.chat.messages.map((message) => <motion.article layout initial={{ opacity: 0, y: 10, scale: .99 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: .24 }} key={message.id} className={message.author}>
           <span>{message.author === "radio" ? <RobotIcon weight="duotone" /> : "You"}</span>
           <div><header><strong>{message.author === "radio" ? "Maintenance RaDio" : "Rafael"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MaintenanceMarkdown content={message.body} />}
+            {message.status === "streaming" && <ResponseActivity hasContent={Boolean(message.body)} />}
             {message.status === "waiting_for_source" && pending?.operationId === message.operationId && <div className="source-required-card">
               <FolderOpenIcon /><div><strong>Asteria source required</strong><p>Choose a repository only when RaDio begins code analysis. Its path stays out of provider prompts.</p>
                 <button className="button primary" onClick={() => void selectSource("folder")}>Choose Asteria repository</button>
@@ -95,7 +97,7 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
         {!readiness.ready && <div className="radio-readiness"><strong>{readiness.loading ? "Checking RaDio prerequisites…" : "Maintenance RaDio is not ready yet"}</strong>{readiness.checks.map((check) => <p className={check.ready ? "ready" : ""} key={check.label}><b>{check.ready ? "Ready" : "Required"}</b><span>{check.label}<small>{check.detail}</small></span></p>)}<button className="button secondary" onClick={() => void readiness.refresh()}>Check again</button></div>}
         <footer className="maintenance-composer">
           <div className="maintenance-composer-input"><textarea aria-label="Message Maintenance RaDio" disabled={!readiness.ready} value={body} onChange={(event) => { setBody(event.target.value); setPromptImproved(false); }} placeholder={readiness.ready ? "Ask about Asteria health, reports, or maintenance…" : "Complete RaDio setup before chatting"} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} /><span><LightbulbIcon /> {body.trim() ? `${body.trim().split(/\s+/).length} words · Enter to send · Shift + Enter for a new line` : "Describe the outcome; RaDio will inspect before acting."}</span></div>
-          <div className="maintenance-composer-actions"><button className={`maintenance-improve-button${promptImproved ? " improved" : ""}`} aria-label="Improve prompt sentence" title="Improve sentence locally" disabled={!body.trim() || !readiness.ready} onClick={() => { setBody(improveMaintenancePrompt(body)); setPromptImproved(true); }}>{promptImproved ? <CheckCircleIcon weight="fill" /> : <SparkleIcon weight="fill" />}<span>{promptImproved ? "Improved" : "Improve sentence"}</span></button><motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: .94 }} aria-label="Send to Maintenance RaDio" disabled={!body.trim() || !readiness.ready || isStreaming} onClick={() => void send()}><ArrowUpIcon weight="bold" /></motion.button></div>
+          <div className="maintenance-composer-actions"><button className={`maintenance-improve-button${promptImproved ? " improved" : ""}`} aria-label={promptImproved ? "Prompt improved" : "Improve prompt"} title={promptImproved ? "Prompt improved" : "Improve prompt locally"} disabled={!body.trim() || !readiness.ready} onClick={() => { setBody(improveMaintenancePrompt(body)); setPromptImproved(true); }}>{promptImproved ? <CheckCircleIcon weight="fill" /> : <MagicWandIcon weight="fill" />}</button><motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: .94 }} aria-label="Send to Maintenance RaDio" disabled={!body.trim() || !readiness.ready || isStreaming} onClick={() => void send()}><ArrowUpIcon weight="bold" /></motion.button></div>
         </footer>
       </section>
       <section className="maintenance-feed">
