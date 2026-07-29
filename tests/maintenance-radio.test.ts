@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { maintenanceRequiresSource } from "../electron/radio/supervisor";
 import { MaintenanceSendSchema, MaintenanceSourceSchema } from "../electron/contracts";
+import { improveMaintenancePrompt } from "../src/screens/MaintenanceRadioScreen";
 
 describe("Maintenance RaDio context", () => {
   it("allows application status and reports without source access", () => {
@@ -20,5 +21,11 @@ describe("Maintenance RaDio context", () => {
     expect(MaintenanceSendSchema.safeParse({ ...base, body: "Show app health" }).success).toBe(true);
     expect(MaintenanceSourceSchema.safeParse({ ...base, source: "orbit", projectId: "project_1234" }).success).toBe(true);
     expect(MaintenanceSourceSchema.safeParse({ ...base, source: "folder" }).success).toBe(true);
+  });
+
+  it("improves maintenance prompts locally with scope and verification guidance", () => {
+    expect(improveMaintenancePrompt("check the renderer")).toBe("Check the renderer. Inspect the relevant Asteria state first, preserve unrelated changes, and report the evidence from each verification.");
+    expect(improveMaintenancePrompt("what is the current health")).toBe("Please explain what is the current health. Use the current application state and keep the response focused on Asteria maintenance.");
+    expect(improveMaintenancePrompt("   ")).toBe("");
   });
 });
