@@ -28,10 +28,11 @@ export async function createIsolationContext(
   const sessionsRoot = path.join(userData, "sessions");
   const appHome = path.join(sessionsRoot, sessionId, "home");
   const providerHome = path.join(appHome, provider);
+  const providerConfigHome = path.join(providerHome, provider === "codex" ? ".codex" : ".claude");
   const worktreePath = path.join(sessionsRoot, sessionId, "worktree");
   const tempRoot = path.join(sessionsRoot, sessionId, "tmp");
   [appHome, providerHome, worktreePath, tempRoot].forEach((target) => assertInside(sessionsRoot, target));
-  await Promise.all([appHome, providerHome, worktreePath, tempRoot].map((target) => mkdir(target, { recursive: true, mode: 0o700 })));
+  await Promise.all([appHome, providerHome, providerConfigHome, worktreePath, tempRoot].map((target) => mkdir(target, { recursive: true, mode: 0o700 })));
   const profileSource = profileId
     ? path.join(userData, "provider-accounts", profileId, provider)
     : path.join(userData, "provider-profiles", provider, provider);
@@ -73,8 +74,9 @@ export async function createProviderProfileContext(userData: string, provider: P
   const profilesRoot = profileId ? path.join(userData, "provider-accounts") : path.join(userData, "provider-profiles");
   const appHome = profileId ? path.join(profilesRoot, profileId) : path.join(profilesRoot, provider);
   const providerHome = path.join(appHome, provider);
+  const providerConfigHome = path.join(providerHome, provider === "codex" ? ".codex" : ".claude");
   const tempRoot = path.join(appHome, "tmp");
-  await Promise.all([appHome, providerHome, tempRoot].map((target) => mkdir(target, { recursive: true, mode: 0o700 })));
+  await Promise.all([appHome, providerHome, providerConfigHome, tempRoot].map((target) => mkdir(target, { recursive: true, mode: 0o700 })));
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,
     SystemRoot: process.env.SystemRoot,

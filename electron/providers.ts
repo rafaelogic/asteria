@@ -1,7 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { accessSync, constants, readdirSync } from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import * as pty from "node-pty";
 import type { ProviderContract, ProviderId } from "../src/types.js";
 import { redactSecrets } from "../src/redaction.js";
@@ -14,11 +16,66 @@ export interface ProviderStatus {
   version?: string;
 }
 
-const commands: Record<ProviderId, string> = { codex: "codex", claude: "claude" };
 const requiredCapabilities: Record<ProviderId, string[]> = {
   codex: ["structured-stream", "cancellation", "isolated-home", "tool-events"],
   claude: ["structured-stream", "cancellation", "isolated-home", "tool-events"]
 };
+
+function executable(candidate: string) {
+  try {
+    accessSync(candidate, process.platform === "win32" ? constants.F_OK : constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function childDirectories(root: string) {
+  try {
+    return readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort()
+      .reverse();
+  } catch {
+    return [];
+  }
+}
+
+export function resolveProviderCommand(
+  id: ProviderId,
+  options: { env?: NodeJS.ProcessEnv; home?: string } = {}
+) {
+  const env = options.env ?? process.env;
+  const home = options.home ?? os.homedir();
+  const binaryNames = process.platform === "win32" ? [`${id}.exe`, `${id}.cmd`, id] : [id];
+  const candidates = (env.PATH ?? "").split(path.delimiter).filter(Boolean)
+    .flatMap((directory) => binaryNames.map((name) => path.join(directory, name)));
+  candidates.push(...binaryNames.flatMap((name) => [
+    path.join(home, ".local", "bin", name),
+    path.join(home, "bin", name),
+    path.join("/usr/local/bin", name),
+    path.join("/usr/bin", name),
+    path.join("/snap/bin", name)
+  ]));
+
+  for (const version of childDirectories(path.join(home, ".nvm", "versions", "node"))) {
+    candidates.push(...binaryNames.map((name) => path.join(home, ".nvm", "versions", "node", version, "bin", name)));
+  }
+
+  const extensionRoots = [path.join(home, ".vscode", "extensions"), path.join(home, ".vscode-insiders", "extensions")];
+  const extensionPrefixes = id === "codex" ? ["openai.chatgpt-"] : ["anthropic.claude-"];
+  for (const extensionRoot of extensionRoots) {
+    for (const extension of childDirectories(extensionRoot).filter((name) => extensionPrefixes.some((prefix) => name.startsWith(prefix)))) {
+      const binRoot = path.join(extensionRoot, extension, "bin");
+      for (const platformDirectory of childDirectories(binRoot)) {
+        candidates.push(...binaryNames.map((name) => path.join(binRoot, platformDirectory, name)));
+      }
+    }
+  }
+
+  return candidates.find(executable);
+}
 
 function versionNumber(value?: string) {
   const match = value?.match(/(\d+)\.(\d+)\.(\d+)/);
@@ -26,12 +83,15 @@ function versionNumber(value?: string) {
 }
 
 function detect(id: ProviderId): ProviderStatus {
-  const result = spawnSync(commands[id], ["--version"], { encoding: "utf8", timeout: 4_000, shell: false });
+  const command = resolveProviderCommand(id);
+  const result = command
+    ? spawnSync(command, ["--version"], { encoding: "utf8", timeout: 4_000, shell: false })
+    : undefined;
   return {
     id,
     name: id === "codex" ? "OpenAI Codex" : "Claude Code",
-    available: result.status === 0,
-    version: result.status === 0 ? (result.stdout || result.stderr).trim() : undefined
+    available: result?.status === 0,
+    version: result?.status === 0 ? (result.stdout || result.stderr).trim() : undefined
   };
 }
 
@@ -51,6 +111,11 @@ export class ProviderManager extends EventEmitter {
     return this.detectAll().map((status) => {
       const parsed = versionNumber(status.version);
       const compatible = status.available && Boolean(parsed) && (status.id === "codex" ? parsed![0] >= 0 : parsed![0] >= 1);
+      const remediation = !status.available
+        ? `${status.name} CLI was not found in PATH, a local/NVM installation, or its supported VS Code extension.`
+        : !parsed
+          ? `${status.name} returned an unreadable version string.`
+          : compatible ? undefined : `Upgrade ${status.name} to a supported version.`;
       return {
         schemaVersion: 1,
         provider: status.id,
@@ -59,7 +124,7 @@ export class ProviderManager extends EventEmitter {
         compatible,
         capabilities: status.capabilities ?? [],
         missingCapabilities: compatible ? [] : requiredCapabilities[status.id],
-        remediation: compatible ? undefined : `Install a supported ${status.name} CLI and authenticate it inside Asteria.`
+        remediation
       };
     });
   }
@@ -70,7 +135,9 @@ export class ProviderManager extends EventEmitter {
     const sessionId = context.sessionId;
     if (this.sessions.has(sessionId)) throw new Error("Authentication session is already running.");
     const args = provider === "codex" ? ["login", "--device-auth"] : ["auth", "login"];
-    const process = pty.spawn(commands[provider], args, {
+    const command = resolveProviderCommand(provider);
+    if (!command) throw new Error(`${provider === "codex" ? "OpenAI Codex" : "Claude Code"} CLI could not be resolved.`);
+    const process = pty.spawn(command, args, {
       name: "xterm-256color",
       cols: 100,
       rows: 30,
@@ -100,9 +167,16 @@ export class ProviderManager extends EventEmitter {
     const contract = this.contracts().find((item) => item.provider === provider);
     if (!contract?.compatible) throw new Error(contract?.remediation ?? "Provider is unavailable.");
     if (this.sessions.has(context.sessionId)) throw new Error("Session is already running.");
-    const shell = os.platform() === "win32" ? "powershell.exe" : commands[provider];
+    const command = resolveProviderCommand(provider);
+    if (!command) throw new Error(`${provider === "codex" ? "OpenAI Codex" : "Claude Code"} CLI could not be resolved.`);
+    const authArgs = provider === "codex" ? ["login", "status"] : ["auth", "status"];
+    const auth = spawnSync(command, authArgs, { encoding: "utf8", timeout: 8_000, shell: false, env: context.env });
+    if (auth.status !== 0) {
+      throw new Error(`${provider === "codex" ? "OpenAI Codex" : "Claude Code"} is installed, but Asteria's isolated provider profile is not authenticated. Sign in from Asteria Settings.`);
+    }
+    const shell = os.platform() === "win32" ? "powershell.exe" : command;
     const args = os.platform() === "win32"
-      ? ["-NoProfile", "-Command", `& ${commands[provider]} ${provider === "codex" ? "exec --json" : "-p --output-format stream-json"} -- $input`, prompt]
+      ? ["-NoProfile", "-Command", `& '${command.replaceAll("'", "''")}' ${provider === "codex" ? "exec --json" : "-p --output-format stream-json"} -- $input`, prompt]
       : provider === "codex"
         ? ["exec", "--json", prompt]
         : ["-p", "--output-format", "stream-json", "--verbose", prompt];

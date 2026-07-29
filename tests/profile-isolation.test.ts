@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -24,6 +24,7 @@ describe("shared profile non-interference", () => {
     const context = await createIsolationContext(path.join(root, "asteria"), `session_${profile}`, workspace, profile === "claude" ? "claude" : "codex");
     expect(context.env.HOME).not.toContain(shared);
     expect(context.allowedRoots).not.toContain(shared);
+    expect(existsSync(profile === "claude" ? context.env.CLAUDE_CONFIG_DIR : context.env.CODEX_HOME)).toBe(true);
     expect(digest(shared)).toBe(before);
   });
 });
