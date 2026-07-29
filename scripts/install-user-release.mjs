@@ -117,7 +117,7 @@ const current = linkTarget(currentLink) ?? legacySnapTarget();
 const snapshot = snapshotStorage(manifest.version);
 if (current && current !== versionPath) atomicLink(current, previousLink);
 atomicLink(versionPath, currentLink);
-writeFileSync(path.join(binHome, "asteria"), `#!/bin/sh\nunset ELECTRON_RUN_AS_NODE\nexec "${currentLink}/asteria" "$@"\n`, { mode: 0o755 });
+writeFileSync(path.join(binHome, "asteria"), `#!/bin/sh\nunset ELECTRON_RUN_AS_NODE\nexec "${currentLink}/asteria" --ozone-platform=x11 "$@"\n`, { mode: 0o755 });
 // A user desktop file with the same ID takes precedence over the legacy system
 // package while preserving the launcher identity already cached by desktop shells.
 writeFileSync(path.join(dataHome, "applications", "asteria.desktop"), `[Desktop Entry]\nName=Asteria\nComment=Agentic workflow control plane\nExec=${path.join(binHome, "asteria")}\nTryExec=${path.join(binHome, "asteria")}\nIcon=asteria\nTerminal=false\nType=Application\nStartupWMClass=Asteria\nDBusActivatable=false\nCategories=Development;\n`, { mode: 0o644 });
