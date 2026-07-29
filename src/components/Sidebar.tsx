@@ -87,7 +87,7 @@ export function Sidebar({ screen, onChange, projects, activeProjectId, onProject
             <span><strong>Maintenance RaDio</strong><small>App health and reports</small></span>
           </button>
         </div>}
-        <button className="profile" aria-expanded={profileOpen} aria-haspopup="menu" onClick={() => setProfileOpen((open) => !open)}>
+        <button className="profile" aria-label="Rafael Local profile" aria-expanded={profileOpen} aria-haspopup="menu" onClick={() => setProfileOpen((open) => !open)}>
           <span className="avatar">RP</span>
           <span><strong>Rafael</strong><small>Local profile</small></span>
           <LockKeyIcon size={16} />

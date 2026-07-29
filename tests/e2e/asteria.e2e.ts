@@ -115,7 +115,24 @@ test("Rafael menu opens maintenance RaDio and sidebar content remains scrollable
   await expect(page.getByText("Asteria source required")).toBeVisible();
   await expect(page.getByRole("button", { name: "Choose Asteria repository" })).toBeVisible();
   await expect(page.getByLabel("Existing local Orbit")).toBeVisible();
-  expect(await page.locator(".sidebar-scroll").evaluate((element) => getComputedStyle(element).overflowY)).toBe("auto");
+  expect(await page.locator(".sidebar-scroll").evaluate((element) => getComputedStyle(element).overflowY)).toBe("scroll");
+});
+
+test("compact windows preserve the profile menu and visible sidebar scrolling", async () => {
+  await page.setViewportSize({ width: 860, height: 520 });
+  const sidebar = page.locator(".sidebar-scroll");
+  await expect(sidebar).toBeVisible();
+  const metrics = await sidebar.evaluate((element) => ({
+    overflowY: getComputedStyle(element).overflowY,
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(metrics.overflowY).toBe("scroll");
+  expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+  await page.getByRole("button", { name: /Rafael Local profile/i }).click();
+  await expect(page.getByRole("menuitem", { name: /Maintenance RaDio/i })).toBeVisible();
+  await page.getByRole("menuitem", { name: /Maintenance RaDio/i }).click();
+  await expect(page.getByRole("heading", { name: "Maintenance RaDio", exact: true })).toBeVisible();
 });
 
 test("renderer has no uncaught console errors", async () => {
