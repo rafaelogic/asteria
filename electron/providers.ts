@@ -165,12 +165,13 @@ export class ProviderManager extends EventEmitter {
       normalizer.flush().forEach((event) => this.emit("event", sessionId, event));
       this.sessions.delete(sessionId);
       this.normalizers.delete(sessionId);
+      const authenticated = exitCode === 0 && this.isAuthenticated(provider, context);
       this.emit("event", sessionId, {
         id: randomUUID(),
-        type: exitCode === 0 ? "completed" : "error",
+        type: authenticated ? "completed" : "error",
         timestamp: new Date().toISOString(),
-        title: exitCode === 0 ? "Authentication complete" : "Authentication failed",
-        detail: `${provider} login exited with code ${exitCode}`
+        title: authenticated ? "Authentication complete" : "Authentication failed",
+        detail: authenticated ? `${provider} authentication was verified in Asteria's isolated profile.` : `${provider} login ended without a verified isolated profile.`
       });
     });
     return { sessionId, pid: process.pid };

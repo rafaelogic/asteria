@@ -13,7 +13,7 @@ const remoteAnalyticsPackages = [
   "mixpanel-browser",
   "posthog-js"
 ];
-const approvedRemoteHosts = new Set(["api.github.com", "github.com"]);
+const approvedRemoteHosts = new Set(["api.github.com", "github.com", "auth.openai.com"]);
 
 function filesWithin(target) {
   const absolute = path.join(root, target);

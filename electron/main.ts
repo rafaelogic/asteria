@@ -53,7 +53,7 @@ let accountVault: RaDioAccountVault;
 let radio: RaDioCore;
 const skillRegistry = new SkillRegistry();
 const skillRuntime = new SkillRuntime(skillRegistry);
-const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude"; kind?: "workflow" | "chat" | "maintenance" | "authentication" | "repair" | "verification"; chatMessageId?: string; incidentId?: string; worktreePath?: string; profileId?: string }>();
+const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude"; kind?: "workflow" | "chat" | "maintenance" | "authentication" | "repair" | "verification"; chatMessageId?: string; incidentId?: string; worktreePath?: string; profileId?: string; authUrlOpened?: boolean }>();
 const pendingAttachments = new Map<string, Map<string, import("../src/types.js").RaDioChatAttachment>>();
 const runningProjectSessions = new Map<string, Set<string>>();
 const failedProjectSessions = new Set<string>();
@@ -390,6 +390,10 @@ providers.on("event", (sessionId: string, event) => {
     });
   }
   window?.webContents.send("agent:event", { ...event, projectId: context?.projectId, runId: context?.runId, specialist: context?.role });
+  if (context?.kind === "authentication" && !context.authUrlOpened && event.detail.includes("https://auth.openai.com/codex/device")) {
+    context.authUrlOpened = true;
+    void shell.openExternal("https://auth.openai.com/codex/device");
+  }
   if (context?.kind === "authentication" && (event.type === "completed" || event.type === "error")) {
     if (context.profileId) {
       void accountVault.update(context.profileId, {
