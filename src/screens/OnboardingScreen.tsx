@@ -109,7 +109,14 @@ export function OnboardingScreen({ onComplete, onExplore, onCancel, existingProj
   };
   const chooseFolder = async () => {
     const folder = await window.asteria?.system.selectFolder();
-    if (folder) patch({ repositoryPath: folder, repository: "", projectName: draft.projectName || folder.split(/[\\/]/).pop() || "" });
+    if (!folder) return;
+    try {
+      await window.asteria?.repositories.status(folder);
+      setError("");
+      patch({ repositoryPath: folder, repository: "", projectName: draft.projectName || folder.split(/[\\/]/).pop() || "" });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Choose the root folder of a Git repository.");
+    }
   };
   const authenticate = async (provider: ProviderId) => {
     setError("");
@@ -168,10 +175,15 @@ export function OnboardingScreen({ onComplete, onExplore, onCancel, existingProj
       if (window.asteria) {
         let completedDraft = draft;
         const remote = repositories.find((repository) => repository.fullName === draft.repository);
-        if (remote && !draft.repositoryPath) {
-          const cloned = await window.asteria.repositories.clone({ cloneUrl: remote.cloneUrl, projectName: draft.projectName, idempotencyKey: `clone_${crypto.randomUUID()}` });
+        if (draft.repository && !draft.repositoryPath) {
+          if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(draft.repository)) {
+            throw new Error("Enter a GitHub repository as owner/name, or choose a local Git repository.");
+          }
+          const cloneUrl = remote?.cloneUrl ?? `https://github.com/${draft.repository}.git`;
+          const cloned = await window.asteria.repositories.clone({ cloneUrl, projectName: draft.projectName, idempotencyKey: `clone_${crypto.randomUUID()}` });
           completedDraft = { ...draft, repositoryPath: cloned.path };
         }
+        if (!completedDraft.repositoryPath) throw new Error("Choose or clone a local Git repository before creating the project.");
         const created = await window.asteria.projects.create({ ...completedDraft, idempotencyKey: `onboard_${crypto.randomUUID()}` });
         onComplete(created);
       } else {
@@ -219,6 +231,7 @@ export function OnboardingScreen({ onComplete, onExplore, onCancel, existingProj
             {draft.step === 2 && <WizardSection icon={<FolderOpenIcon />} eyebrow="Repository" title="Select the project workspace" description="Asteria creates isolated task worktrees without changing your original working copy.">
               <button className="repository-card" onClick={() => void chooseFolder()}><FolderOpenIcon /><span><strong>{draft.repositoryPath || "Choose a local Git repository"}</strong><small>Original files remain outside agent session homes</small></span><ArrowRightIcon /></button>
               {draft.githubConnected && <label className="form-field"><span>GitHub repository</span>{repositories.length ? <select value={draft.repository} onChange={(event) => patch({ repository: event.target.value, repositoryPath: "", projectName: draft.projectName || event.target.value.split("/").pop() || "" })}><option value="">Choose a repository…</option>{repositories.map((repository) => <option value={repository.fullName} key={repository.id}>{repository.fullName}{repository.private ? " · Private" : ""}</option>)}</select> : <input value={draft.repository} onChange={(event) => patch({ repository: event.target.value, repositoryPath: "", projectName: draft.projectName || event.target.value.split("/").pop() || "" })} placeholder="organization/repository" />}</label>}
+              {error && <p className="wizard-error">{error}</p>}
             </WizardSection>}
             {draft.step === 3 && <WizardSection icon={<SparkleIcon />} eyebrow="Product intent" title="What should this project become?" description="Give the Planner enough context to create measurable requirements before any code is changed.">
               <div className="form-grid"><label className="form-field"><span>Project name</span><input value={draft.projectName} onChange={(event) => patch({ projectName: event.target.value })} placeholder="A clear project name" /></label><label className="form-field full"><span>Idea and outcome</span><textarea value={draft.idea} onChange={(event) => patch({ idea: event.target.value })} placeholder="Build a product that helps…" /></label><label className="form-field"><span>Target users</span><input value={draft.audience} onChange={(event) => patch({ audience: event.target.value })} placeholder="Who is this for?" /></label><label className="form-field"><span>Constraints</span><input value={draft.constraints} onChange={(event) => patch({ constraints: event.target.value })} placeholder="Platform, deadline, compliance…" /></label></div>

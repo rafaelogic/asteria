@@ -188,7 +188,50 @@ export function App() {
         idempotencyKey: `execute_${crypto.randomUUID()}`
       }));
     } catch (error) {
-      setDialog({ title: "Stage could not start", detail: error instanceof Error ? error.message : "Stage execution could not start.", copyable: true });
+      const detail = error instanceof Error ? error.message : "Stage execution could not start.";
+      if (detail.includes("local repository is required")) {
+        setDialog({
+          title: "Connect this project to its repository",
+          detail: "This existing project does not have a valid local Git repository. Choose its repository root and Asteria will save the project binding, then retry this stage.",
+          confirmLabel: "Choose repository",
+          cancelLabel: "Not now",
+          onConfirm: () => { void attachRepositoryAndExecute(); }
+        });
+      } else {
+        setDialog({ title: "Stage could not start", detail, copyable: true });
+      }
+    }
+  };
+
+  const attachRepositoryAndExecute = async () => {
+    if (!window.asteria) return;
+    try {
+      const folder = await window.asteria.system.selectFolder();
+      if (!folder) return;
+      await window.asteria.repositories.status(folder);
+      const bound = await window.asteria.projects.update({
+        projectId: activeProject.id,
+        runId: activeProject.runId,
+        expectedVersion: activeProject.version,
+        idempotencyKey: `repository_${crypto.randomUUID()}`,
+        patch: {
+          repositoryPath: folder,
+          repository: activeProject.repository || folder.split(/[\\/]/).pop() || "Local repository"
+        }
+      });
+      replaceProject(bound);
+      replaceProject(await window.asteria.workflows.execute({
+        projectId: bound.id,
+        runId: bound.runId,
+        expectedVersion: bound.version,
+        idempotencyKey: `execute_${crypto.randomUUID()}`
+      }));
+    } catch (error) {
+      setDialog({
+        title: "Repository could not be connected",
+        detail: error instanceof Error ? error.message : "Choose the root folder of a local Git repository.",
+        copyable: true
+      });
     }
   };
 

@@ -59,7 +59,7 @@ export const OnboardingSchema = z.object({
   defaultProvider: ProviderIdSchema,
   githubConnected: z.boolean(),
   repository: z.string().max(500),
-  repositoryPath: z.string().max(4096),
+  repositoryPath: z.string().min(1).max(4096),
   projectName: z.string().min(1).max(120),
   idea: z.string().min(10).max(20_000),
   audience: z.string().max(2_000),
@@ -86,6 +86,8 @@ export const ProjectUpdateSchema = MutationSchema.extend({
   patch: z.object({
     name: z.string().min(1).max(120).optional(),
     objective: z.string().min(1).max(20_000).optional(),
+    repository: z.string().min(1).max(500).optional(),
+    repositoryPath: z.string().min(1).max(4096).optional(),
     provider: ProviderIdSchema.optional(),
     roleProviders: z.record(SpecialistRoleSchema, ProviderIdSchema).optional(),
     runStatus: z.enum(["queued", "active", "approval", "paused", "blocked", "failed", "completed"]).optional()

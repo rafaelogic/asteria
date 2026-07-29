@@ -443,7 +443,7 @@ export interface AsteriaApi {
   projects: {
     list(): Promise<Project[]>;
     create(draft: OnboardingDraft & { idempotencyKey: string }): Promise<Project>;
-    update(input: MutationInput & { patch: Partial<Pick<Project, "name" | "objective" | "provider" | "roleProviders" | "runStatus">> }): Promise<Project>;
+    update(input: MutationInput & { patch: Partial<Pick<Project, "name" | "objective" | "repository" | "repositoryPath" | "provider" | "roleProviders" | "runStatus">> }): Promise<Project>;
     subscribe(listener: (project: Project) => void): () => void;
   };
   providers: {

@@ -208,17 +208,19 @@ providers.on("event", (sessionId: string, event) => {
 });
 
 ipcMain.handle("projects:list", () => store.projects.list());
-ipcMain.handle("projects:create", (_event, raw) => {
+ipcMain.handle("projects:create", async (_event, raw) => {
   const input = OnboardingSchema.parse(raw);
+  await repositoryStatus(input.repositoryPath);
   store.telemetry.setPolicy(input.telemetry);
   const project = store.projects.create(input, input.idempotencyKey);
   telemetry.record({ projectId: project.id, runId: project.runId, stage: "define", specialist: "planner", provider: project.provider, kind: "workflow", name: "starpath_created", outcome: "started", payload: { roles: project.workflow.map((step) => step.role) } });
   return project;
 });
-ipcMain.handle("projects:update", (_event, raw) => {
+ipcMain.handle("projects:update", async (_event, raw) => {
   const input = ProjectUpdateSchema.parse(raw);
   const project = store.projects.get(input.projectId);
   if (!project || project.runId !== input.runId) throw new Error("Project/run boundary mismatch.");
+  if (input.patch.repositoryPath) await repositoryStatus(input.patch.repositoryPath);
   return store.projects.save({ ...project, ...input.patch }, input.expectedVersion, input.idempotencyKey);
 });
 ipcMain.handle("workflows:advance", (_event, raw) => {
