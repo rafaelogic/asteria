@@ -3,11 +3,12 @@ import { spawn } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { resolveUserPath, sanitizedDesktopEnvironment } from "./user-paths.mjs";
 
 const taskHome = os.homedir();
-const dataHome = process.env.XDG_DATA_HOME || path.join(taskHome, ".local", "share");
-const stateHome = process.env.XDG_STATE_HOME || path.join(taskHome, ".local", "state");
-const configHome = process.env.XDG_CONFIG_HOME || path.join(taskHome, ".config");
+const dataHome = resolveUserPath("XDG_DATA_HOME", [".local", "share"]);
+const stateHome = resolveUserPath("XDG_STATE_HOME", [".local", "state"]);
+const configHome = resolveUserPath("XDG_CONFIG_HOME", [".config"]);
 const binHome = path.join(taskHome, ".local", "bin");
 const appRoot = path.join(dataHome, "asteria");
 const versionsRoot = path.join(appRoot, "versions");
@@ -19,11 +20,22 @@ const candidate = path.resolve(process.argv[2] || "dist/linux-unpacked");
 const manifestPath = path.resolve(process.argv[3] || "dist/user-release.json");
 const rollback = process.argv.includes("--rollback");
 const launch = process.argv.includes("--launch");
-const applicationEnvironment = { ...process.env };
+const applicationEnvironment = sanitizedDesktopEnvironment();
 delete applicationEnvironment.ELECTRON_RUN_AS_NODE;
 for (const directory of [versionsRoot, releaseStateRoot, binHome, path.join(dataHome, "applications"), path.join(dataHome, "icons", "hicolor", "512x512", "apps")]) mkdirSync(directory, { recursive: true, mode: 0o700 });
 
 function linkTarget(link) { try { return realpathSync(link); } catch { return undefined; } }
+function legacySnapTarget() {
+  const codeSnapRoot = path.join(taskHome, "snap", "code");
+  try {
+    return readdirSync(codeSnapRoot)
+      .map((revision) => ({ revision, target: linkTarget(path.join(codeSnapRoot, revision, ".local", "share", "asteria", "current")) }))
+      .filter((entry) => entry.target)
+      .sort((left, right) => right.revision.localeCompare(left.revision, undefined, { numeric: true }))[0]?.target;
+  } catch {
+    return undefined;
+  }
+}
 function atomicLink(target, link) {
   const temporary = `${link}.next-${randomUUID()}`;
   symlinkSync(target, temporary);
@@ -101,7 +113,7 @@ verify(temporary, manifest);
 const health = await canary(path.join(temporary, "asteria"), manifest.version);
 rmSync(versionPath, { recursive: true, force: true });
 renameSync(temporary, versionPath);
-const current = linkTarget(currentLink);
+const current = linkTarget(currentLink) ?? legacySnapTarget();
 const snapshot = snapshotStorage(manifest.version);
 if (current && current !== versionPath) atomicLink(current, previousLink);
 atomicLink(versionPath, currentLink);

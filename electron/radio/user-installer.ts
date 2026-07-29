@@ -8,7 +8,11 @@ import type { UserInstallState } from "../../src/types.js";
 
 const execute = promisify(execFile);
 export function installStatePath() {
-  const stateHome = process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state");
+  const configured = process.env.XDG_STATE_HOME;
+  const snapRelative = configured ? path.relative(path.join(os.homedir(), "snap"), configured) : "..";
+  const stateHome = configured && (snapRelative.startsWith("..") || path.isAbsolute(snapRelative))
+    ? configured
+    : path.join(os.homedir(), ".local", "state");
   return path.join(stateHome, "asteria", "releases", "install-state.json");
 }
 export async function readUserInstallState(): Promise<UserInstallState> {
