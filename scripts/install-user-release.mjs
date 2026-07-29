@@ -19,6 +19,8 @@ const candidate = path.resolve(process.argv[2] || "dist/linux-unpacked");
 const manifestPath = path.resolve(process.argv[3] || "dist/user-release.json");
 const rollback = process.argv.includes("--rollback");
 const launch = process.argv.includes("--launch");
+const applicationEnvironment = { ...process.env };
+delete applicationEnvironment.ELECTRON_RUN_AS_NODE;
 for (const directory of [versionsRoot, releaseStateRoot, binHome, path.join(dataHome, "applications"), path.join(dataHome, "icons", "hicolor", "512x512", "apps")]) mkdirSync(directory, { recursive: true, mode: 0o700 });
 
 function linkTarget(link) { try { return realpathSync(link); } catch { return undefined; } }
@@ -55,7 +57,7 @@ async function canary(executable, version) {
   const canaryRoot = path.join(releaseStateRoot, `canary-${version}-${Date.now()}`);
   const heartbeat = path.join(canaryRoot, "healthy.json");
   mkdirSync(canaryRoot, { recursive: true, mode: 0o700 });
-  const child = spawn(executable, [`--user-data-dir=${path.join(canaryRoot, "profile")}`, "--password-store=basic", "--no-sandbox", "--disable-gpu"], { env: { ...process.env, ASTERIA_HEALTHCHECK_FILE: heartbeat }, stdio: "ignore" });
+  const child = spawn(executable, [`--user-data-dir=${path.join(canaryRoot, "profile")}`, "--password-store=basic", "--no-sandbox", "--disable-gpu"], { env: { ...applicationEnvironment, ASTERIA_HEALTHCHECK_FILE: heartbeat }, stdio: "ignore" });
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline && !existsSync(heartbeat) && child.exitCode === null) await new Promise((resolve) => setTimeout(resolve, 250));
   child.kill();
@@ -84,7 +86,7 @@ if (rollback) {
     }
   }
   writeFileSync(statePath, JSON.stringify({ ...state, status: "rolled_back", currentPath: previous, previousPath: current, completedAt: new Date().toISOString() }, null, 2), { mode: 0o600 });
-  if (launch) { const child = spawn(path.join(previous, "asteria"), [], { detached: true, stdio: "ignore" }); child.unref(); }
+  if (launch) { const child = spawn(path.join(previous, "asteria"), [], { detached: true, stdio: "ignore", env: applicationEnvironment }); child.unref(); }
   console.log(`Rolled back Asteria to ${previous}`);
   process.exit(0);
 }
@@ -122,5 +124,5 @@ const state = {
   completedAt: new Date().toISOString(),
 };
 writeFileSync(statePath, JSON.stringify(state, null, 2), { mode: 0o600 });
-if (launch) { const child = spawn(path.join(versionPath, "asteria"), [], { detached: true, stdio: "ignore" }); child.unref(); }
+if (launch) { const child = spawn(path.join(versionPath, "asteria"), [], { detached: true, stdio: "ignore", env: applicationEnvironment }); child.unref(); }
 console.log(`Installed Asteria ${manifest.version} for ${os.userInfo().username} at ${versionPath}`);
