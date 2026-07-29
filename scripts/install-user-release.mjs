@@ -57,7 +57,7 @@ async function canary(executable, version) {
   const canaryRoot = path.join(releaseStateRoot, `canary-${version}-${Date.now()}`);
   const heartbeat = path.join(canaryRoot, "healthy.json");
   mkdirSync(canaryRoot, { recursive: true, mode: 0o700 });
-  const child = spawn(executable, [`--user-data-dir=${path.join(canaryRoot, "profile")}`, "--password-store=basic", "--no-sandbox", "--disable-gpu"], { env: { ...applicationEnvironment, ASTERIA_HEALTHCHECK_FILE: heartbeat }, stdio: "ignore" });
+  const child = spawn(executable, [`--user-data-dir=${path.join(canaryRoot, "profile")}`, "--password-store=basic", "--no-sandbox", "--ozone-platform=x11", "--disable-gpu"], { env: { ...applicationEnvironment, ASTERIA_HEALTHCHECK_FILE: heartbeat }, stdio: "ignore" });
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline && !existsSync(heartbeat) && child.exitCode === null) await new Promise((resolve) => setTimeout(resolve, 250));
   child.kill();
