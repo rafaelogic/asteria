@@ -1,0 +1,109 @@
+{
+  "name": "asteria",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Privacy-hardened desktop control plane for autonomous software delivery",
+  "desktopName": "asteria.desktop",
+  "homepage": "https://github.com/rafaelogic/asteria",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rafaelogic/asteria.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rafaelogic/asteria/issues"
+  },
+  "author": {
+    "name": "Asteria Contributors",
+    "email": "noreply@asteria.local"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "dev:electron": "concurrently -k \"vite --host 0.0.0.0\" \"wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "build:web": "vite build",
+    "build:electron": "node scripts/clean-output.mjs dist-electron && tsc -p electron/tsconfig.json",
+    "generate:icons": "cross-env ELECTRON_RUN_AS_NODE= electron scripts/generate-icons.cjs",
+    "audit:privacy": "node scripts/privacy-audit.mjs",
+    "build": "npm run audit:privacy && npm run build:web && npm run build:electron && node scripts/prepare-sites-build.mjs",
+    "test": "vitest run",
+    "test:e2e": "npm run build && playwright test",
+    "test:provider-contracts": "vitest run tests/provider-contracts.test.ts",
+    "test:isolation": "vitest run tests/isolation.test.ts tests/profile-isolation.test.ts tests/network-policy.test.ts",
+    "test:release": "vitest run tests/release-acceptance.test.ts",
+    "test:sites": "node --test tests/sites-worker.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview",
+    "patch:packager": "node scripts/patch-electron-builder.mjs",
+    "postinstall": "npm run patch:packager",
+    "package": "npm run build && npm run patch:packager && electron-builder"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "better-sqlite3-multiple-ciphers": "^12.4.1",
+    "motion": "^12.23.12",
+    "node-pty": "^1.1.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "shiki": "^3.23.0",
+    "xstate": "^5.24.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^39.2.3",
+    "electron-builder": "26.0.12",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.2",
+    "vitest": "^4.0.8",
+    "wait-on": "^9.0.1"
+  },
+  "build": {
+    "appId": "dev.asteria.desktop",
+    "productName": "Asteria",
+    "files": [
+      "dist/client/**/*",
+      "dist-electron/**/*",
+      "runtime/privacy-audit.json",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**/*",
+      "node_modules/better-sqlite3-multiple-ciphers/**/*"
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development",
+      "maintainer": "Asteria Contributors <noreply@asteria.local>",
+      "synopsis": "Privacy-hardened autonomous delivery control plane",
+      "icon": "build/icon.png"
+    }
+  }
+}
