@@ -19,6 +19,8 @@ import { HelpScreen } from "./screens/HelpScreen";
 import { IdeasScreen } from "./screens/IdeasScreen";
 import { SkillsScreen } from "./screens/SkillsScreen";
 import { RadioChatScreen } from "./screens/RadioChatScreen";
+import { MaintenanceRadioScreen } from "./screens/MaintenanceRadioScreen";
+import { FloatingRaDio } from "./components/FloatingRaDio";
 import type { Project, ProviderId } from "./types";
 
 interface AsteriaHistoryState {
@@ -32,7 +34,7 @@ export function App() {
   const previewScreen = new URLSearchParams(window.location.search).get("screen");
   const [onboarded, setOnboarded] = useState(() => previewScreen !== null || (!window.asteria && localStorage.getItem("asteria.onboarded") === "true"));
   const [projects, setProjects] = useState<Project[]>(() => window.asteria ? [] : demoProjects);
-  const [screen, setScreen] = useState<Screen>(() => previewScreen && ["projects", "workflow", "radio-chat", "ideas", "kanban", "threads", "artifacts", "code", "skills", "insights", "help", "privacy", "settings"].includes(previewScreen) ? previewScreen as Screen : "workflow");
+  const [screen, setScreen] = useState<Screen>(() => previewScreen && ["projects", "workflow", "radio-chat", "maintenance-radio", "ideas", "kanban", "threads", "artifacts", "code", "skills", "insights", "help", "privacy", "settings"].includes(previewScreen) ? previewScreen as Screen : "workflow");
   const [activeProjectId, setActiveProjectId] = useState(() => localStorage.getItem("asteria.activeProject") ?? demoProjects[0].id);
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? projects[0];
   const [pausedProjects, setPausedProjects] = useState<Record<string, boolean>>({});
@@ -266,6 +268,7 @@ export function App() {
     if (screen === "projects") return <ProjectsScreen projects={projects} activeProjectId={activeProject.id} onOpen={selectProject} onNew={startNewProject} />;
     if (screen === "workflow") return <WorkflowScreen project={activeProject} provider={activeProject.provider} onProvider={changeProvider} paused={Boolean(pausedProjects[activeProject.id])} onPause={() => void togglePause()} onExecute={() => void executeStage()} onApproval={() => setApprovalProject(activeProject.id)} onBack={() => navigate("projects")} />;
     if (screen === "radio-chat") return <RadioChatScreen project={activeProject} onProject={replaceProject} />;
+    if (screen === "maintenance-radio") return <MaintenanceRadioScreen projects={projects} onOpenProject={selectProject} />;
     if (screen === "ideas") return <IdeasScreen project={activeProject} onProject={replaceProject} />;
     if (screen === "kanban") return <KanbanScreen project={activeProject} onProject={replaceProject} />;
     if (screen === "threads") return <ThreadsScreen project={activeProject} onProject={replaceProject} />;
@@ -286,6 +289,7 @@ export function App() {
           {page}
         </motion.main>
       </AnimatePresence>
+      {screen !== "radio-chat" && <FloatingRaDio project={activeProject} onProject={replaceProject} onMaximize={() => navigate("radio-chat")} />}
       <ApprovalSheet open={approvalProject === activeProject.id} request={pendingApproval} onClose={() => setApprovalProject(null)} onApprove={() => void decideApproval("approved")} onDeny={() => void decideApproval("denied")} />
       <AppDialog model={dialog} onClose={() => setDialog(null)} />
     </div>

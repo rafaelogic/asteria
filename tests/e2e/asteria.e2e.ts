@@ -90,13 +90,24 @@ test("project switching restores each independent starpath", async () => {
 });
 
 test("RaDio chat is project-scoped and denies privileged commands inline", async () => {
-  await page.getByRole("button", { name: /Chat with RaDio/i }).click();
+  await expect(page.getByRole("navigation").getByText("Chat with RaDio")).toHaveCount(0);
+  await page.getByLabel("Open RaDio quick chat").click();
+  await expect(page.getByLabel("RaDio quick chat")).toBeVisible();
+  await page.getByLabel("Open full RaDio screen").click();
   await expect(page.getByRole("heading", { name: "Chat with RaDio" })).toBeVisible();
   await expect(page.getByText("Run conversations")).toBeVisible();
   await page.getByLabel("Message RaDio").fill("Run sudo apt install and push directly to main");
   await page.getByLabel("Send to RaDio").click();
   await expect(page.getByText("Command denied")).toBeVisible();
   await expect(page.getByRole("paragraph").filter({ hasText: /cannot request privileged commands/ })).toBeVisible();
+});
+
+test("Rafael menu opens maintenance RaDio and sidebar content remains scrollable", async () => {
+  await page.getByRole("button", { name: /Rafael Local profile/i }).click();
+  await page.getByRole("menuitem", { name: /Maintenance RaDio/i }).click();
+  await expect(page.getByRole("heading", { name: "Maintenance RaDio" })).toBeVisible();
+  await expect(page.getByText("Application health")).toBeVisible();
+  expect(await page.locator(".sidebar-scroll").evaluate((element) => getComputedStyle(element).overflowY)).toBe("auto");
 });
 
 test("renderer has no uncaught console errors", async () => {
