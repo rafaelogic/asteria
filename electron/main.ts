@@ -53,7 +53,7 @@ let accountVault: RaDioAccountVault;
 let radio: RaDioCore;
 const skillRegistry = new SkillRegistry();
 const skillRuntime = new SkillRuntime(skillRegistry);
-const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude"; kind?: "workflow" | "chat" | "maintenance" | "authentication" | "repair" | "verification"; chatMessageId?: string; incidentId?: string; worktreePath?: string }>();
+const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude"; kind?: "workflow" | "chat" | "maintenance" | "authentication" | "repair" | "verification"; chatMessageId?: string; incidentId?: string; worktreePath?: string; profileId?: string }>();
 const pendingAttachments = new Map<string, Map<string, import("../src/types.js").RaDioChatAttachment>>();
 const runningProjectSessions = new Map<string, Set<string>>();
 const failedProjectSessions = new Set<string>();
@@ -386,6 +386,16 @@ providers.on("event", (sessionId: string, event) => {
     });
   }
   window?.webContents.send("agent:event", { ...event, projectId: context?.projectId, runId: context?.runId, specialist: context?.role });
+  if (context?.kind === "authentication" && (event.type === "completed" || event.type === "error")) {
+    if (context.profileId) {
+      void accountVault.update(context.profileId, {
+        authenticated: event.type === "completed",
+        health: event.type === "completed" ? "healthy" : "unavailable"
+      }).then(() => window?.webContents.send("accounts:updated")).catch(() => undefined);
+    }
+    sessionContext.delete(sessionId);
+    return;
+  }
   if (context?.kind === "maintenance" && context.chatMessageId) {
     const current = store.maintenance.get();
     const now = new Date().toISOString();
@@ -559,10 +569,13 @@ ipcMain.handle("workflows:execute", (_event, raw) => executeWorkflowRaw(raw));
 
 ipcMain.handle("providers:detect", () => providers.detectAll());
 ipcMain.handle("providers:contracts", () => providers.contracts());
-ipcMain.handle("providers:auth-state", (_event, provider: unknown) => {
+ipcMain.handle("providers:auth-state", async (_event, provider: unknown) => {
   if (provider !== "codex" && provider !== "claude") throw new Error("Unsupported provider.");
   const status = providers.detectAll().find((item) => item.id === provider);
-  return { provider, status: status?.available ? "connected" : "disconnected", message: status?.available ? `CLI ${status.version ?? "detected"} in Asteria profile` : "CLI is not installed." };
+  if (!status?.available) return { provider, status: "disconnected", message: "CLI is not installed." };
+  const context = await createProviderProfileContext(app.getPath("userData"), provider);
+  const authenticated = providers.isAuthenticated(provider, context);
+  return { provider, status: authenticated ? "connected" : "disconnected", message: authenticated ? `CLI ${status.version ?? "detected"} authenticated in Asteria's isolated profile` : "CLI detected; isolated Asteria profile needs sign-in." };
 });
 ipcMain.handle("providers:authenticate", async (_event, raw: unknown) => {
   if (raw !== "codex" && raw !== "claude") throw new Error("Unsupported provider.");
@@ -586,7 +599,17 @@ ipcMain.handle("providers:cancel", (_event, sessionId: string) => {
   providers.cancel(sessionId);
   sessionContext.delete(sessionId);
 });
-ipcMain.handle("accounts:list", () => accountVault.list());
+ipcMain.handle("accounts:list", async () => {
+  const profiles = accountVault.list();
+  for (const profile of profiles) {
+    const context = await createProviderProfileContext(app.getPath("userData"), profile.provider, profile.id);
+    const authenticated = providers.isAuthenticated(profile.provider, context);
+    if (authenticated !== profile.authenticated || (!authenticated && profile.health !== "unavailable")) {
+      await accountVault.update(profile.id, { authenticated, health: authenticated ? "healthy" : "unavailable" });
+    }
+  }
+  return accountVault.list();
+});
 ipcMain.handle("accounts:add", async (_event, raw) => {
   const input = ProviderAccountAddSchema.parse(raw);
   return accountVault.add(input.provider, input.nickname);
@@ -596,10 +619,9 @@ ipcMain.handle("accounts:authenticate", async (_event, profileId: unknown) => {
   const profile = accountVault.get(id);
   if (!profile) throw new Error("Provider account profile not found.");
   const context = await createProviderProfileContext(app.getPath("userData"), profile.provider, profile.id);
-  sessionContext.set(context.sessionId, { projectId: "application", runId: "authentication", role: "authentication", provider: profile.provider });
-  const result = providers.authenticate(profile.provider, context);
-  await accountVault.update(profile.id, { authenticated: true, health: "healthy" });
-  return result;
+  sessionContext.set(context.sessionId, { projectId: "application", runId: "authentication", role: "authentication", provider: profile.provider, kind: "authentication", profileId: profile.id });
+  await accountVault.update(profile.id, { authenticated: false, health: "unavailable" });
+  return providers.authenticate(profile.provider, context);
 });
 ipcMain.handle("accounts:update", async (_event, raw) => {
   const input = ProviderAccountUpdateSchema.parse(raw);

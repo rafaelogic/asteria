@@ -103,8 +103,21 @@ export class ProviderManager extends EventEmitter {
     return [detect("codex"), detect("claude")].map((status) => ({
       ...status,
       capabilities: status.available ? requiredCapabilities[status.id] : [],
-      authenticated: status.available
+      authenticated: false
     }));
+  }
+
+  isAuthenticated(provider: ProviderId, context: IsolationContext) {
+    const command = resolveProviderCommand(provider);
+    if (!command) return false;
+    const args = provider === "codex" ? ["login", "status"] : ["auth", "status"];
+    const result = spawnSync(command, args, {
+      encoding: "utf8",
+      timeout: 8_000,
+      shell: false,
+      env: context.env
+    });
+    return result.status === 0;
   }
 
   contracts(): ProviderContract[] {
@@ -169,9 +182,7 @@ export class ProviderManager extends EventEmitter {
     if (this.sessions.has(context.sessionId)) throw new Error("Session is already running.");
     const command = resolveProviderCommand(provider);
     if (!command) throw new Error(`${provider === "codex" ? "OpenAI Codex" : "Claude Code"} CLI could not be resolved.`);
-    const authArgs = provider === "codex" ? ["login", "status"] : ["auth", "status"];
-    const auth = spawnSync(command, authArgs, { encoding: "utf8", timeout: 8_000, shell: false, env: context.env });
-    if (auth.status !== 0) {
+    if (!this.isAuthenticated(provider, context)) {
       throw new Error(`${provider === "codex" ? "OpenAI Codex" : "Claude Code"} is installed, but Asteria's isolated provider profile is not authenticated. Sign in from Asteria Settings.`);
     }
     const shell = os.platform() === "win32" ? "powershell.exe" : command;

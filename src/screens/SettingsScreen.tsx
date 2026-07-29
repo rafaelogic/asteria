@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BellIcon, CheckCircleIcon, CpuIcon, GitBranchIcon, PlusIcon, RobotIcon, ShieldCheckIcon, SirenIcon, SwapIcon } from "@phosphor-icons/react";
+import { BellIcon, CheckCircleIcon, CpuIcon, GitBranchIcon, LockKeyIcon, PlusIcon, RobotIcon, ShieldCheckIcon, SirenIcon, SwapIcon } from "@phosphor-icons/react";
 import type { Project, ProviderAccountProfile, ProviderId, ProviderStatus, RaDioMode, SpecialistRole } from "../types";
 import { ProviderMark } from "../components/ProviderMark";
 
@@ -18,9 +18,19 @@ const demoAccounts: ProviderAccountProfile[] = [
 export function SettingsScreen({ project, onProject }: { project: Project; onProject: (project: Project) => void }) {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [accounts, setAccounts] = useState<ProviderAccountProfile[]>(window.asteria ? [] : demoAccounts);
+  const [authMessage, setAuthMessage] = useState("");
+  const [authenticating, setAuthenticating] = useState<string>();
   useEffect(() => {
     void window.asteria?.providers.detect().then(setProviders).catch(() => undefined);
     void window.asteria?.accounts.list().then(setAccounts).catch(() => undefined);
+    return window.asteria?.events.subscribe((event) => {
+      if (event.projectId !== "application" || event.specialist !== "authentication") return;
+      setAuthMessage(event.detail);
+      if (event.type === "completed" || event.type === "error") {
+        setAuthenticating(undefined);
+        void window.asteria?.accounts.list().then(setAccounts);
+      }
+    });
   }, []);
   const base = { projectId: project.id, runId: project.runId, expectedVersion: project.version };
   const assign = async (role: SpecialistRole, provider: ProviderId) => {
@@ -40,10 +50,24 @@ export function SettingsScreen({ project, onProject }: { project: Project; onPro
   };
   const addAccount = async (provider: ProviderId) => {
     if (!window.asteria) return;
-    const profile = await window.asteria.accounts.add({ provider, nickname: `${provider === "codex" ? "Codex" : "Claude"} account ${accounts.filter((item) => item.provider === provider).length + 1}` });
-    setAccounts((current) => [...current, profile]);
-    await window.asteria.accounts.authenticate(profile.id);
-    setAccounts(await window.asteria.accounts.list());
+    try {
+      const profile = await window.asteria.accounts.add({ provider, nickname: `${provider === "codex" ? "Codex" : "Claude"} account ${accounts.filter((item) => item.provider === provider).length + 1}` });
+      setAccounts((current) => [...current, profile]);
+      await authenticateAccount(profile);
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : "Provider authentication could not start.");
+    }
+  };
+  const authenticateAccount = async (account: ProviderAccountProfile) => {
+    if (!window.asteria) return;
+    setAuthenticating(account.id);
+    setAuthMessage(`Starting ${account.provider === "codex" ? "OpenAI Codex" : "Claude Code"} sign-in…`);
+    try {
+      await window.asteria.accounts.authenticate(account.id);
+    } catch (error) {
+      setAuthenticating(undefined);
+      setAuthMessage(error instanceof Error ? error.message : "Provider authentication could not start.");
+    }
   };
   const emergencyStop = async () => {
     if (window.asteria) onProject(await window.asteria.radio.emergencyStop({ ...base, idempotencyKey: `radio_stop_${crypto.randomUUID()}` }));
@@ -54,7 +78,8 @@ export function SettingsScreen({ project, onProject }: { project: Project; onPro
       <div className="radio-settings-grid"><label><span>Operating mode</span><select value={project.radio.mode} onChange={(event) => void saveRaDio({ mode: event.target.value as RaDioMode })}><option value="autonomous">Guided</option><option value="full_autonomous">Ascendant</option></select></label><label><span>Staging branch</span><input key={project.radio.stagingBranch} defaultValue={project.radio.stagingBranch} onBlur={(event) => { if (event.target.value !== project.radio.stagingBranch) void saveRaDio({ stagingBranch: event.target.value }); }} /></label><button className="toggle-row compact" onClick={() => void saveRaDio({ mergeProductionEnabled: !project.radio.mergeProductionEnabled })}><span><strong>Merge + production</strong><small>Verified PRs only · no direct pushes</small></span><i className={project.radio.mergeProductionEnabled ? "toggle on" : "toggle"}><b /></i></button><button className="danger-button" onClick={() => void emergencyStop()}><SirenIcon /> Emergency stop</button></div>
     </section>
     <section className="settings-panel account-pool-panel"><header><SwapIcon /><div><h2>Provider account pool</h2><p>Cross-provider handoff at 5% authoritative remaining usage. Unknown usage is never estimated.</p></div><span className="account-pool-actions"><button className="text-button" onClick={() => void addAccount("codex")}><PlusIcon /> Codex</button><button className="text-button" onClick={() => void addAccount("claude")}><PlusIcon /> Claude</button></span></header>
-      <div className="account-pool-list">{accounts.map((account) => { const selected = project.radio.accountPool.accountIds.includes(account.id); const remaining = account.usage.remainingPercent; return <button key={account.id} className={`account-profile ${selected ? "selected" : ""}`} onClick={() => void toggleAccount(account.id)}><span className={`provider-health-mark ${account.provider}`}><ProviderMark provider={account.provider} size={20} /></span><span><strong>{account.nickname}</strong><small>{account.provider === "codex" ? "OpenAI Codex" : "Claude Code"} · {account.health}</small></span><span className="usage-meter"><i><b style={{ width: `${remaining ?? 0}%` }} /></i><small>{remaining === undefined ? "Usage unavailable" : `${remaining}% remaining`}</small></span><b>{selected ? "In pool" : "Add"}</b></button>; })}</div>
+      {authMessage && <p className="provider-auth-message" role="status">{authMessage}</p>}
+      <div className="account-pool-list">{accounts.map((account) => { const selected = project.radio.accountPool.accountIds.includes(account.id); const remaining = account.usage.remainingPercent; return <div key={account.id} className={`account-profile ${selected ? "selected" : ""}`}><button className="account-profile-main" onClick={() => void toggleAccount(account.id)}><span className={`provider-health-mark ${account.provider}`}><ProviderMark provider={account.provider} size={20} /></span><span><strong>{account.nickname}</strong><small>{account.provider === "codex" ? "OpenAI Codex" : "Claude Code"} · {account.authenticated ? account.health : "Sign-in required"}</small></span><span className="usage-meter"><i><b style={{ width: `${remaining ?? 0}%` }} /></i><small>{remaining === undefined ? "Usage unavailable" : `${remaining}% remaining`}</small></span><b>{selected ? "In pool" : "Add"}</b></button><button className="text-button account-auth-button" disabled={authenticating === account.id} onClick={() => void authenticateAccount(account)}><LockKeyIcon /> {authenticating === account.id ? "Signing in…" : account.authenticated ? "Reconnect" : "Sign in"}</button></div>; })}</div>
     </section>
     <div className="settings-layout"><section className="settings-panel"><header><CpuIcon /><div><h2>Role routing</h2><p>Use the project default or assign a provider per specialist.</p></div></header><div className="role-settings">{roles.map((role) => <label key={role.id}><span><strong>{role.label}</strong><small>{role.id}</small></span><select value={project.roleProviders?.[role.id] ?? project.provider} onChange={(event) => void assign(role.id, event.target.value as ProviderId)}><option value="codex">OpenAI Codex</option><option value="claude">Claude Code</option></select></label>)}</div></section>
       <div className="settings-stack"><section className="settings-panel"><header><CheckCircleIcon /><div><h2>Provider health</h2><p>Installed CLI capability detection.</p></div></header><div className="health-list">{providers.length ? providers.map((provider) => <div key={provider.id}><span className={`provider-health-mark ${provider.id}`}><ProviderMark provider={provider.id} size={20} /></span><span><strong>{provider.name}</strong><small>{provider.version ?? "Version unavailable"}</small></span><b className={provider.available ? "success" : ""}>{provider.available ? "Ready" : "Missing"}</b></div>) : <p className="muted-copy">Health checks are available in the Electron application.</p>}</div></section>

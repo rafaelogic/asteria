@@ -36,7 +36,7 @@ export class RaDioAccountVault {
   async ensureDefaults(providers: ProviderId[]) {
     for (const provider of providers) {
       if (!this.profiles.some((profile) => profile.provider === provider)) {
-        const profile = await this.add(provider, provider === "codex" ? "Codex primary" : "Claude primary", true);
+        const profile = await this.add(provider, provider === "codex" ? "Codex primary" : "Claude primary", false);
         try {
           await cp(path.join(this.userData, "provider-profiles", provider, provider), path.join(this.userData, "provider-accounts", profile.id, provider), { recursive: true, force: false });
         } catch (error) {
