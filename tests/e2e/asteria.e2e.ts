@@ -139,6 +139,18 @@ test("compact windows preserve the profile menu and visible sidebar scrolling", 
   await expect(page.getByRole("heading", { name: "Maintenance RaDio", exact: true })).toBeVisible();
 });
 
+test("desktop-height layout keeps the profile footer fully inside the viewport", async () => {
+  await page.setViewportSize({ width: 1900, height: 915 });
+  const profileBox = await page.getByRole("button", { name: "Rafael Local profile" }).boundingBox();
+  const scrollBox = await page.locator(".sidebar-scroll").boundingBox();
+  expect(profileBox).not.toBeNull();
+  expect(scrollBox).not.toBeNull();
+  expect((profileBox?.y ?? 0) + (profileBox?.height ?? 0)).toBeLessThanOrEqual(915);
+  expect((scrollBox?.y ?? 0) + (scrollBox?.height ?? 0)).toBeLessThanOrEqual(profileBox?.y ?? 0);
+  await page.getByRole("button", { name: "Rafael Local profile" }).click();
+  await expect(page.getByRole("menuitem", { name: /Maintenance RaDio/i })).toBeVisible();
+});
+
 test("renderer has no uncaught console errors", async () => {
   const errors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
