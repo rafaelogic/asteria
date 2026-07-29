@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { maintenanceRequiresPreview, maintenanceRequiresSource } from "../electron/radio/supervisor";
+import { maintenanceRequiresPreview, maintenanceRequiresSource, maintenanceUsesHostPreview } from "../electron/radio/supervisor";
 import { MaintenanceSendSchema, MaintenanceSourceSchema } from "../electron/contracts";
 import { improveMaintenancePrompt } from "../src/screens/MaintenanceRadioScreen";
 
@@ -9,6 +9,9 @@ describe("Maintenance RaDio context", () => {
       expect(maintenanceRequiresPreview(request)).toBe(true);
     }
     expect(maintenanceRequiresPreview("run the production build")).toBe(false);
+    expect(maintenanceUsesHostPreview(true, "implement the requested changes and run the production build")).toBe(true);
+    expect(maintenanceUsesHostPreview(true, "check the UI layout")).toBe(true);
+    expect(maintenanceUsesHostPreview(false, "check the UI layout")).toBe(false);
   });
 
   it("allows application status and reports without source access", () => {

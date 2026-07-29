@@ -39,8 +39,8 @@ describe("RaDio account routing", () => {
 describe("RaDio safety policy", () => {
   it("requires recovery from patch drift and evidence before reusing a preview", () => {
     expect(RADIO_GOVERNING_PROMPT).toContain("reread the current target region");
-    expect(RADIO_GOVERNING_PROMPT).toContain("load the expected application before calling it verified");
-    expect(RADIO_GOVERNING_PROMPT).toContain("Report build success and visual preview verification separately");
+    expect(RADIO_GOVERNING_PROMPT).toContain("Never start or probe a localhost preview listener from a provider sandbox");
+    expect(RADIO_GOVERNING_PROMPT).toContain("report build success and visual verification separately");
   });
 
   it("always gates destructive live production data operations", () => {

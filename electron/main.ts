@@ -31,7 +31,7 @@ import { openStore, type AsteriaStore } from "./storage.js";
 import { LocalTelemetry } from "./telemetry.js";
 import { providerForRole, transitionWorkflow } from "../src/workflow.js";
 import { redactSecrets } from "../src/redaction.js";
-import { classifyChatCommand, decideChatCommand, defaultTakeover, maintenanceRequiresPreview, maintenanceRequiresSource, recordIncident } from "./radio/supervisor.js";
+import { classifyChatCommand, decideChatCommand, defaultTakeover, maintenanceRequiresSource, maintenanceUsesHostPreview, recordIncident } from "./radio/supervisor.js";
 import { inspectAttachment, revalidateAttachment } from "./radio/attachments.js";
 import { prepareUserCandidate, readUserInstallState } from "./radio/user-installer.js";
 import type { ApplicationMaintenanceSettings, DeploymentRun, HealthFinding, NetworkApproval, NetworkRequest, Project, ReleaseEvidence } from "../src/types.js";
@@ -454,7 +454,7 @@ async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, r
   const sessionId = `maintenance_${responseId.slice(0, 8)}`;
   const account = selectApplicationRaDioAccount(accountVault.list(), state.provider, ["structured-stream", "cancellation", "isolated-home", "tool-events"]);
   const context = await createIsolationContext(app.getPath("userData"), sessionId, workspace, state.provider, account?.id);
-  const hostPreview = Boolean(state.source && maintenanceRequiresPreview(body));
+  const hostPreview = maintenanceUsesHostPreview(Boolean(state.source), body);
   let previewEvidence: PreviewEvidence | undefined;
   if (hostPreview) {
     try {
@@ -476,7 +476,7 @@ async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, r
   const openIncidents = projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved"));
   const install = await readUserInstallState();
   try {
-    providers.start(state.provider, `${radio.governingPrompt()}\nYou are Maintenance RaDio, isolated from Orbit chats. Discuss only Asteria application health, installation, recovery, incidents, and maintenance reports. Never reveal the source path, credentials, hidden reasoning, raw provider conversations, or unrelated Orbit content. ${state.source ? "A validated Asteria source repository is available. You may inspect and edit files only inside that repository when the owner requests code changes; preserve unrelated changes and run proportionate checks." : "No source repository is available; answer from normalized application state only and do not inspect or edit code."}${previewEvidence ? `\nAsteria's trusted host already started and loaded the project preview outside your provider sandbox. Do not start another localhost server. Initial evidence: ${previewEvidenceSummary(previewEvidence)} Asteria will reload and capture final host evidence after your run.` : ""}\nInstalled version: ${install.currentVersion ?? app.getVersion()}\nRollback ready: ${install.rollbackReady}\nOrbit count: ${projects.length}\nOpen application-relevant incidents: ${openIncidents.length}\nOwner request: ${redactSecrets(body)}`, context, { workspaceWrite: Boolean(state.source) });
+    providers.start(state.provider, `${radio.governingPrompt()}\nYou are Maintenance RaDio, isolated from Orbit chats. Discuss only Asteria application health, installation, recovery, incidents, and maintenance reports. Never reveal the source path, credentials, hidden reasoning, raw provider conversations, or unrelated Orbit content. Never start or probe a localhost preview listener from the provider sandbox; only Asteria's trusted host may own preview processes and renderer evidence. ${state.source ? "A validated Asteria source repository is available. You may inspect and edit files only inside that repository when the owner requests code changes; preserve unrelated changes and run proportionate checks." : "No source repository is available; answer from normalized application state only and do not inspect or edit code."}${previewEvidence ? `\nAsteria's trusted host already started and loaded the project preview outside your provider sandbox. Initial evidence: ${previewEvidenceSummary(previewEvidence)} Asteria will reload and capture final host evidence after your run.` : ""}\nInstalled version: ${install.currentVersion ?? app.getVersion()}\nRollback ready: ${install.rollbackReady}\nOrbit count: ${projects.length}\nOpen application-relevant incidents: ${openIncidents.length}\nOwner request: ${redactSecrets(body)}`, context, { workspaceWrite: Boolean(state.source) });
   } catch (error) {
     if (hostPreview) await previewManager.stop(sessionId);
     sessionContext.delete(sessionId);

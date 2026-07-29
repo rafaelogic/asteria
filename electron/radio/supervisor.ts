@@ -72,6 +72,10 @@ export function maintenanceRequiresPreview(body: string) {
   return /\b(visual|preview|browser|renderer|screenshot|ui|user interface|layout|responsive)\b/i.test(body);
 }
 
+export function maintenanceUsesHostPreview(hasSource: boolean, body: string) {
+  return hasSource && (maintenanceRequiresSource(body) || maintenanceRequiresPreview(body));
+}
+
 export function decideChatCommand(project: Project, command: RaDioChatCommand) {
   if (command.status === "denied") return command;
   const external = command.kind === "staging" || command.kind === "install";

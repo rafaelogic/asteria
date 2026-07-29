@@ -49,11 +49,14 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
 
   const send = async () => {
     if (!window.asteria || !state || !body.trim() || !readiness.ready) return;
+    const submittedBody = body;
     setError("");
     try {
       const latest = await window.asteria.maintenance.state();
-      const updated = await window.asteria.maintenance.send({ expectedVersion: latest.version, idempotencyKey: `maintenance_${crypto.randomUUID()}`, operationId: crypto.randomUUID(), body });
-      setState(updated); setBody(""); setPromptImproved(false);
+      const updated = await window.asteria.maintenance.send({ expectedVersion: latest.version, idempotencyKey: `maintenance_${crypto.randomUUID()}`, operationId: crypto.randomUUID(), body: submittedBody });
+      setState(updated);
+      setBody((current) => current === submittedBody ? "" : current);
+      setPromptImproved(false);
     } catch (value) { setError(value instanceof Error ? value.message : "Maintenance RaDio could not send this message."); }
   };
   const selectSource = async (source: "folder" | "orbit") => {
@@ -80,7 +83,7 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
     <div className="maintenance-layout">
       <section className="maintenance-chat">
         <header><span><strong>Application conversation</strong><small>{observations} encrypted Observations available</small></span><b>{state?.provider ?? "codex"}</b></header>
-        <div className="maintenance-messages"><AnimatePresence initial={false}>{state?.chat.messages.length ? state.chat.messages.map((message) => <motion.article layout initial={{ opacity: 0, y: 10, scale: .99 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: .24 }} key={message.id} className={message.author}>
+        <div className="maintenance-messages"><AnimatePresence initial={false}>{state?.chat.messages.length ? state.chat.messages.map((message) => <motion.article initial={{ opacity: 0, y: 10, scale: .99 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: .24 }} key={message.id} className={message.author}>
           <span>{message.author === "radio" ? <RobotIcon weight="duotone" /> : "You"}</span>
           <div><header><strong>{message.author === "radio" ? "Maintenance RaDio" : "Rafael"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MaintenanceMarkdown content={message.body} />}
             {message.status === "streaming" && <ResponseActivity hasContent={Boolean(message.body)} />}
