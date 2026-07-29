@@ -14,15 +14,17 @@ import {
   PuzzlePieceIcon,
   SquaresFourIcon,
   UsersThreeIcon
+  ,ChatCircleDotsIcon
 } from "@phosphor-icons/react";
 import { Brand } from "./Brand";
 import type { Project } from "../types";
 
-export type Screen = "projects" | "workflow" | "ideas" | "kanban" | "threads" | "artifacts" | "code" | "skills" | "insights" | "help" | "privacy" | "settings";
+export type Screen = "projects" | "workflow" | "radio-chat" | "ideas" | "kanban" | "threads" | "artifacts" | "code" | "skills" | "insights" | "help" | "privacy" | "settings";
 
 const items: Array<{ id: Screen; label: string; icon: typeof SquaresFourIcon }> = [
   { id: "projects", label: "All projects", icon: StackIcon },
   { id: "workflow", label: "Starpath", icon: SquaresFourIcon },
+  { id: "radio-chat", label: "Chat with RaDio", icon: ChatCircleDotsIcon },
   { id: "ideas", label: "Signals", icon: LightbulbIcon },
   { id: "kanban", label: "Star Map", icon: KanbanIcon },
   { id: "threads", label: "Constellations", icon: UsersThreeIcon },

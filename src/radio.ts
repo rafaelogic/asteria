@@ -5,13 +5,14 @@ import type {
 export const DEFAULT_RADIO_SETTINGS: RaDioSettings = {
   mode: "autonomous",
   enabled: true,
-  stagingBranch: "radio/staging",
+  stagingBranch: "staging",
   mergeProductionEnabled: false,
   maxRepairAttempts: 3,
   dailyScout: true,
   emergencyStopped: false,
   accountPool: { enabled: false, thresholdPercent: 5, crossProvider: true, accountIds: [] }
-  ,skillsEnabled: true, enabledSkillIds: [], disabledSkillIds: [], approvedOrbitSkillDigests: {}, memoryEnabled: false, ownerMemoryEnabled: false
+  ,skillsEnabled: true, enabledSkillIds: [], disabledSkillIds: [], approvedOrbitSkillDigests: {}, memoryEnabled: false, ownerMemoryEnabled: false,
+  takeoverEnabled: false, healthMonitoringEnabled: true, autoResume: true, autoPushStaging: true, autoBuild: true, autoInstall: true, installChannel: "user", rollbackRetention: 1
 };
 
 export const RADIO_GOVERNING_PROMPT = `You are RaDio, Asteria's project-scoped autonomous coordinator.

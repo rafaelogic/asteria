@@ -11,6 +11,8 @@ export type SkillSource = "builtin" | "orbit";
 export type SkillPermission = "filesystem_read" | "filesystem_write" | "command_execute" | "git_write" | "network_read" | "external_mutation" | "deployment" | "production";
 export type SkillCapability = "filesystem" | "command" | "git" | "github" | "provider" | "research" | "browser" | "packages" | "tests" | "deployment" | "observability" | "notifications" | "approvals";
 export type SkillHealth = "ready" | "disabled" | "unapproved" | "incompatible" | "running" | "failed";
+export type IncidentCategory = "renderer" | "electron" | "provider" | "tool" | "build" | "test" | "git" | "storage" | "security" | "packaging" | "startup" | "unknown";
+export type TakeoverPhase = "idle" | "inspecting" | "executing" | "monitoring" | "classifying" | "repairing" | "verifying" | "integrating" | "pushing" | "building" | "installing" | "relaunching" | "observing" | "paused" | "blocked";
 export type SpecialistRole =
   | "planner" | "product_designer" | "ui_designer" | "architect"
   | "frontend" | "backend" | "database" | "devops" | "integrator"
@@ -198,6 +200,45 @@ export interface RaDioMemoryEntry {
   title: string; value: string; confidence: number; createdAt: string; updatedAt: string; expiresAt?: string; redacted: true;
 }
 
+export interface HealthSignal {
+  id: string; projectId: string; runId: string; source: string; category: IncidentCategory;
+  operation: string; message: string; severity: "info" | "warning" | "error" | "critical";
+  evidenceDigest: string; capturedAt: string; redacted: true;
+}
+export interface RepairAttempt { id: string; incidentId: string; attempt: number; role: SpecialistRole; status: "queued" | "running" | "verifying" | "succeeded" | "failed"; worktreePath?: string; checks: string[]; commit?: string; startedAt: string; completedAt?: string }
+export interface RepairPlan { incidentId: string; owner: SpecialistRole; verifier: SpecialistRole; skillIds: string[]; summary: string; createdAt: string }
+export interface RepairVerification { incidentId: string; verifier: SpecialistRole; passed: boolean; checks: string[]; evidenceIds: string[]; verifiedAt: string }
+export interface HealthIncident {
+  id: string; fingerprint: string; projectId: string; runId: string; category: IncidentCategory;
+  title: string; detail: string; severity: HealthSignal["severity"]; status: "open" | "repairing" | "verifying" | "resolved" | "blocked";
+  owner: SpecialistRole; signals: HealthSignal[]; attempts: RepairAttempt[]; plan?: RepairPlan; verification?: RepairVerification;
+  createdAt: string; updatedAt: string; resolvedAt?: string;
+}
+export interface SupervisorCheckpoint { id: string; projectId: string; runId: string; phase: TakeoverPhase; coordinate?: string; incidentId?: string; operationId?: string; stagingRevision?: string; createdAt: string; redacted: true }
+export interface StagingPromotion { id: string; projectId: string; runId: string; branch: "staging"; commit: string; remoteCommit?: string; status: "checking" | "integrated" | "pushed" | "blocked"; fastForwardOnly: true; createdAt: string; completedAt?: string; detail: string }
+export interface TakeoverState {
+  projectId: string; runId: string; enabled: boolean; phase: TakeoverPhase; health: "healthy" | "degraded" | "repairing" | "blocked";
+  currentCoordinate?: string; activeIncidentId?: string; installTransactionId?: string; checkpoint?: SupervisorCheckpoint; staging?: StagingPromotion;
+  lastHealthScanAt?: string; lastError?: string; updatedAt: string;
+}
+export interface ReleaseManifest { schemaVersion: 1; version: string; commit: string; sourceDigest: string; artifactDigest: string; checks: string[]; createdAt: string }
+export interface CandidateHealthCheck { storage: boolean; providers: boolean; skills: boolean; renderer: boolean; consoleErrors: string[]; heartbeat: boolean; checkedAt: string }
+export interface RollbackSnapshot { id: string; version: string; path: string; databaseIncluded: boolean; createdAt: string }
+export interface InstallTransaction { id: string; projectId: string; runId: string; version: string; status: "preparing" | "canary" | "activating" | "healthy" | "rolling_back" | "rolled_back" | "failed"; candidatePath: string; previousPath?: string; manifest: ReleaseManifest; health?: CandidateHealthCheck; rollback?: RollbackSnapshot; startedAt: string; completedAt?: string; detail: string }
+export interface UserInstallState { currentVersion?: string; previousVersion?: string; currentPath?: string; previousPath?: string; transaction?: InstallTransaction; rollbackReady: boolean }
+
+export interface RaDioChatReference { kind: "coordinate" | "incident" | "task" | "file" | "commit" | "observation" | "star"; id: string; label: string }
+export interface RaDioChatAttachment { id: string; name: string; path: string; mime: string; size: number; modifiedAt: string; digest: string; status: "ready" | "stale" | "missing" | "rejected" }
+export interface RaDioChatCommand { id: string; kind: "query" | "priority" | "task" | "takeover" | "star" | "health" | "build" | "install" | "staging" | "skill" | "observation"; operation: string; status: "proposed" | "allowed" | "approval" | "denied" | "running" | "completed" | "failed"; policyReason: string }
+export interface RaDioExecutionCard { id: string; kind: "tool" | "star" | "approval" | "check" | "waypoint" | "relay" | "staging" | "build" | "install" | "rollback"; title: string; detail: string; status: "queued" | "running" | "completed" | "failed" | "blocked"; createdAt: string; completedAt?: string }
+export interface RaDioPanelSummary { roles: SpecialistRole[]; recommendation: string; disagreements: string[]; evidenceIds: string[] }
+export interface RaDioChatMessage {
+  id: string; projectId: string; runId: string; author: "human" | "radio"; body: string; status: "streaming" | "completed" | "cancelled" | "failed";
+  references: RaDioChatReference[]; attachments: RaDioChatAttachment[]; command?: RaDioChatCommand; cards: RaDioExecutionCard[]; panel?: RaDioPanelSummary;
+  createdAt: string; completedAt?: string; redacted: true;
+}
+export interface RaDioChat { id: string; projectId: string; runId: string; archived: boolean; messages: RaDioChatMessage[]; createdAt: string; updatedAt: string }
+
 export interface RaDioSettings {
   mode: RaDioMode;
   enabled: boolean;
@@ -215,6 +256,14 @@ export interface RaDioSettings {
   approvedOrbitSkillDigests: Record<string, string>;
   memoryEnabled: boolean;
   ownerMemoryEnabled: boolean;
+  takeoverEnabled: boolean;
+  healthMonitoringEnabled: boolean;
+  autoResume: boolean;
+  autoPushStaging: boolean;
+  autoBuild: boolean;
+  autoInstall: boolean;
+  installChannel: "user";
+  rollbackRetention: 1;
 }
 
 export interface WorkflowStep {
@@ -315,6 +364,9 @@ export interface Project {
   accountTransitions: AccountTransition[];
   radioReports: RaDioReport[];
   skillExecutions: SkillExecution[];
+  takeover: TakeoverState;
+  incidents: HealthIncident[];
+  radioChats: RaDioChat[];
   budget: { minutes: number; usedMinutes: number; tokenLimit: number; usedTokens: number };
   createdAt: string;
   updatedAt: string;
@@ -531,6 +583,22 @@ export interface AsteriaApi {
     updateIdea(input: MutationInput & { ideaId: string; status: IdeaStatus }): Promise<Project>;
     safeHandoff(input: MutationInput & { agentId: string; role: SpecialistRole; accountId: string; reason?: "threshold" | "quota" | "manual" | "unavailable" }): Promise<Project>;
     emergencyStop(input: MutationInput): Promise<Project>;
+    takeoverStatus(projectId: string): Promise<TakeoverState>;
+    takeoverControl(input: MutationInput & { action: "start" | "pause" | "resume" | "scan" }): Promise<Project>;
+    incidents(projectId: string): Promise<HealthIncident[]>;
+    reportHealth(input: { projectId: string; runId: string; source: string; operation: string; message: string; severity?: HealthSignal["severity"] }): Promise<Project>;
+  };
+  radioChat: {
+    history(projectId: string): Promise<RaDioChat[]>;
+    send(input: MutationInput & { body: string; references: RaDioChatReference[]; attachmentIds: string[] }): Promise<Project>;
+    cancel(input: MutationInput & { messageId: string }): Promise<Project>;
+    selectAttachments(projectId: string): Promise<RaDioChatAttachment[]>;
+    validateAttachment(projectId: string, attachmentId: string): Promise<RaDioChatAttachment>;
+  };
+  installer: {
+    state(): Promise<UserInstallState>;
+    prepare(input: MutationInput): Promise<UserInstallState>;
+    rollback(input: MutationInput): Promise<UserInstallState>;
   };
   skills: {
     list(projectId: string): Promise<SkillRecord[]>;

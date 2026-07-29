@@ -87,3 +87,26 @@ export async function checkpoint(worktreePath: string, message: string) {
   await git(["commit", "-m", message.slice(0, 200)], root);
   return { commit: await git(["rev-parse", "HEAD"], root) };
 }
+
+export async function promoteFastForwardToStaging(dataRoot: string, projectId: string, repositoryPath: string, sourceCommit: string) {
+  const repositoryRoot = await realpath(repositoryPath);
+  if (!/^[a-f0-9]{7,64}$/i.test(sourceCommit)) throw new Error("A verified source commit is required.");
+  await git(["fetch", "--prune", "origin"], repositoryRoot);
+  const remoteExists = await git(["show-ref", "--verify", "--quiet", "refs/remotes/origin/staging"], repositoryRoot).then(() => true, () => false);
+  const base = remoteExists ? "origin/staging" : await git(["rev-parse", "HEAD"], repositoryRoot);
+  const integrationRoot = path.join(dataRoot, "projects", slug(projectId), "integration");
+  await mkdir(integrationRoot, { recursive: true, mode: 0o700 });
+  const destination = path.join(integrationRoot, `staging-${Date.now().toString(36)}`);
+  const branch = `asteria/staging-${Date.now().toString(36)}`;
+  await git(["worktree", "add", "-b", branch, "--", destination, base], repositoryRoot);
+  try {
+    await git(["merge", "--ff-only", sourceCommit], destination);
+    const commit = await git(["rev-parse", "HEAD"], destination);
+    await git(["push", "origin", "HEAD:refs/heads/staging"], destination);
+    await git(["branch", "-f", "staging", commit], repositoryRoot).catch(() => undefined);
+    return { branch: "staging" as const, commit, remoteCommit: commit, fastForwardOnly: true as const };
+  } finally {
+    await git(["worktree", "remove", "--force", destination], repositoryRoot).catch(() => undefined);
+    await git(["branch", "-D", branch], repositoryRoot).catch(() => undefined);
+  }
+}

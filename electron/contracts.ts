@@ -53,6 +53,14 @@ export const RaDioSettingsSchema = z.object({
   approvedOrbitSkillDigests: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)).default({}),
   memoryEnabled: z.boolean().default(false),
   ownerMemoryEnabled: z.boolean().default(false),
+  takeoverEnabled: z.boolean().default(false),
+  healthMonitoringEnabled: z.boolean().default(true),
+  autoResume: z.boolean().default(true),
+  autoPushStaging: z.boolean().default(true),
+  autoBuild: z.boolean().default(true),
+  autoInstall: z.boolean().default(true),
+  installChannel: z.literal("user").default("user"),
+  rollbackRetention: z.literal(1).default(1),
   accountPool: z.object({
     enabled: z.boolean(), thresholdPercent: z.literal(5), crossProvider: z.boolean(),
     accountIds: z.array(z.string().uuid()).max(20),
@@ -73,10 +81,12 @@ export const OnboardingSchema = z.object({
   constraints: z.string().max(4_000),
   roles: z.array(SpecialistRoleSchema).optional(),
   radio: RaDioSettingsSchema.default({
-    mode: "autonomous", enabled: true, stagingBranch: "radio/staging", mergeProductionEnabled: false,
+    mode: "autonomous", enabled: true, stagingBranch: "staging", mergeProductionEnabled: false,
     maxRepairAttempts: 3, dailyScout: true, emergencyStopped: false,
     skillsEnabled: true, enabledSkillIds: [], disabledSkillIds: [], approvedOrbitSkillDigests: {},
     memoryEnabled: false, ownerMemoryEnabled: false,
+    takeoverEnabled: false, healthMonitoringEnabled: true, autoResume: true, autoPushStaging: true,
+    autoBuild: true, autoInstall: true, installChannel: "user", rollbackRetention: 1,
     accountPool: { enabled: false, thresholdPercent: 5, crossProvider: true, accountIds: [] }
   }),
   telemetry: TelemetryPolicySchema,
@@ -128,6 +138,17 @@ export const MemoryAddSchema = MutationSchema.extend({
   })
 });
 export const MemoryForgetSchema = MutationSchema.extend({ memoryId: z.string().uuid() });
+export const TakeoverControlSchema = MutationSchema.extend({ action: z.enum(["start", "pause", "resume", "scan"]) });
+export const ChatReferenceSchema = z.object({ kind: z.enum(["coordinate", "incident", "task", "file", "commit", "observation", "star"]), id: z.string().min(1).max(160), label: z.string().min(1).max(240) });
+export const ChatSendSchema = MutationSchema.extend({
+  body: z.string().min(1).max(20_000), references: z.array(ChatReferenceSchema).max(30),
+  attachmentIds: z.array(z.string().uuid()).max(20)
+});
+export const ChatCancelSchema = MutationSchema.extend({ messageId: z.string().uuid() });
+export const HealthSignalSchema = z.object({
+  projectId: z.string().min(4).max(80), runId: z.string().min(4).max(80), source: z.string().min(1).max(120),
+  operation: z.string().min(1).max(240), message: z.string().min(1).max(4000), severity: z.enum(["info", "warning", "error", "critical"]).optional()
+});
 export const CloneRepositorySchema = z.object({
   cloneUrl: z.string().url().max(2048),
   projectName: z.string().min(1).max(120),

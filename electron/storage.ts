@@ -6,6 +6,7 @@ import path from "node:path";
 import type { OnboardingDraft, Project, RaDioMemoryEntry, SkillExecution, TelemetryEvent, TelemetryPolicy, TelemetrySummary } from "../src/types.js";
 import { PRODUCTION_WORKFLOW, recommendedRoles, transitionWorkflow } from "../src/workflow.js";
 import { DEFAULT_RADIO_SETTINGS } from "../src/radio.js";
+import { defaultTakeover } from "./radio/supervisor.js";
 
 export interface AsteriaStore {
   db: Database.Database;
@@ -170,7 +171,9 @@ export class ProjectRepository {
       ...project, artifacts: project.artifacts ?? [], approvals: project.approvals ?? [], messages: project.messages ?? [],
       tasks: project.tasks ?? [], events: project.events ?? [], radio: { ...DEFAULT_RADIO_SETTINGS, ...(project.radio ?? {}), accountPool: { ...DEFAULT_RADIO_SETTINGS.accountPool, ...(project.radio?.accountPool ?? {}) } },
       ideas: project.ideas ?? [], accountTransitions: project.accountTransitions ?? [], radioReports: project.radioReports ?? []
-      ,skillExecutions: project.skillExecutions ?? []
+      ,skillExecutions: project.skillExecutions ?? [], incidents: project.incidents ?? [],
+      takeover: project.takeover ?? defaultTakeover(project.id, project.runId, project.radio?.mode === "full_autonomous"),
+      radioChats: project.radioChats ?? [{ id: randomUUID(), projectId: project.id, runId: project.runId, archived: false, messages: [], createdAt: project.createdAt, updatedAt: project.updatedAt }]
     };
   }
 
@@ -217,6 +220,9 @@ export class ProjectRepository {
       accountTransitions: [],
       radioReports: [],
       skillExecutions: [],
+      incidents: [],
+      takeover: defaultTakeover(id, runId, draft.radio?.mode === "full_autonomous"),
+      radioChats: [{ id: randomUUID(), projectId: id, runId, archived: false, messages: [], createdAt: now, updatedAt: now }],
       budget: { minutes: 480, usedMinutes: 0, tokenLimit: 1_000_000, usedTokens: 0 },
       createdAt: now,
       updatedAt: now

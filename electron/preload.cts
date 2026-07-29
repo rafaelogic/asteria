@@ -33,7 +33,23 @@ const api: AsteriaApi = {
     scout: (input) => ipcRenderer.invoke("radio:scout", input),
     updateIdea: (input) => ipcRenderer.invoke("radio:update-idea", input),
     safeHandoff: (input) => ipcRenderer.invoke("radio:safe-handoff", input),
-    emergencyStop: (input) => ipcRenderer.invoke("radio:emergency-stop", input)
+    emergencyStop: (input) => ipcRenderer.invoke("radio:emergency-stop", input),
+    takeoverStatus: (projectId) => ipcRenderer.invoke("radio:takeover-status", projectId),
+    takeoverControl: (input) => ipcRenderer.invoke("radio:takeover-control", input),
+    incidents: (projectId) => ipcRenderer.invoke("radio:incidents", projectId),
+    reportHealth: (input) => ipcRenderer.invoke("radio:health-signal", input)
+  },
+  radioChat: {
+    history: (projectId) => ipcRenderer.invoke("radio-chat:history", projectId),
+    send: (input) => ipcRenderer.invoke("radio-chat:send", input),
+    cancel: (input) => ipcRenderer.invoke("radio-chat:cancel", input),
+    selectAttachments: (projectId) => ipcRenderer.invoke("radio-chat:select-attachments", projectId),
+    validateAttachment: (projectId, attachmentId) => ipcRenderer.invoke("radio-chat:validate-attachment", { projectId, attachmentId })
+  },
+  installer: {
+    state: () => ipcRenderer.invoke("installer:state"),
+    prepare: (input) => ipcRenderer.invoke("installer:prepare", input),
+    rollback: (input) => ipcRenderer.invoke("installer:rollback", input)
   },
   skills: {
     list: (projectId) => ipcRenderer.invoke("skills:list", projectId),

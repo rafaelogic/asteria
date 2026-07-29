@@ -18,6 +18,7 @@ import { CodeScreen } from "./screens/CodeScreen";
 import { HelpScreen } from "./screens/HelpScreen";
 import { IdeasScreen } from "./screens/IdeasScreen";
 import { SkillsScreen } from "./screens/SkillsScreen";
+import { RadioChatScreen } from "./screens/RadioChatScreen";
 import type { Project, ProviderId } from "./types";
 
 interface AsteriaHistoryState {
@@ -31,7 +32,7 @@ export function App() {
   const previewScreen = new URLSearchParams(window.location.search).get("screen");
   const [onboarded, setOnboarded] = useState(() => previewScreen !== null || (!window.asteria && localStorage.getItem("asteria.onboarded") === "true"));
   const [projects, setProjects] = useState<Project[]>(() => window.asteria ? [] : demoProjects);
-  const [screen, setScreen] = useState<Screen>(() => previewScreen && ["projects", "workflow", "ideas", "kanban", "threads", "artifacts", "code", "skills", "insights", "help", "privacy", "settings"].includes(previewScreen) ? previewScreen as Screen : "workflow");
+  const [screen, setScreen] = useState<Screen>(() => previewScreen && ["projects", "workflow", "radio-chat", "ideas", "kanban", "threads", "artifacts", "code", "skills", "insights", "help", "privacy", "settings"].includes(previewScreen) ? previewScreen as Screen : "workflow");
   const [activeProjectId, setActiveProjectId] = useState(() => localStorage.getItem("asteria.activeProject") ?? demoProjects[0].id);
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? projects[0];
   const [pausedProjects, setPausedProjects] = useState<Record<string, boolean>>({});
@@ -56,6 +57,19 @@ export function App() {
   useEffect(() => window.asteria?.projects.subscribe((updated) => {
     setProjects((current) => current.map((project) => project.id === updated.id ? updated : project));
   }), []);
+
+  useEffect(() => {
+    if (!window.asteria || !activeProject) return;
+    const report = (operation: string, value: unknown) => {
+      const message = value instanceof Error ? value.message : typeof value === "string" ? value : "Unhandled renderer failure";
+      void window.asteria?.radio.reportHealth({ projectId: activeProject.id, runId: activeProject.runId, source: "renderer", operation, message, severity: "error" }).catch(() => undefined);
+    };
+    const onError = (event: ErrorEvent) => report("window.error", event.error ?? event.message);
+    const onRejection = (event: PromiseRejectionEvent) => report("unhandledrejection", event.reason);
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => { window.removeEventListener("error", onError); window.removeEventListener("unhandledrejection", onRejection); };
+  }, [activeProject?.id, activeProject?.runId]);
 
   useEffect(() => {
     if (loading) return;
@@ -251,6 +265,7 @@ export function App() {
   const page = (() => {
     if (screen === "projects") return <ProjectsScreen projects={projects} activeProjectId={activeProject.id} onOpen={selectProject} onNew={startNewProject} />;
     if (screen === "workflow") return <WorkflowScreen project={activeProject} provider={activeProject.provider} onProvider={changeProvider} paused={Boolean(pausedProjects[activeProject.id])} onPause={() => void togglePause()} onExecute={() => void executeStage()} onApproval={() => setApprovalProject(activeProject.id)} onBack={() => navigate("projects")} />;
+    if (screen === "radio-chat") return <RadioChatScreen project={activeProject} onProject={replaceProject} />;
     if (screen === "ideas") return <IdeasScreen project={activeProject} onProject={replaceProject} />;
     if (screen === "kanban") return <KanbanScreen project={activeProject} onProject={replaceProject} />;
     if (screen === "threads") return <ThreadsScreen project={activeProject} onProject={replaceProject} />;

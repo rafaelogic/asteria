@@ -36,6 +36,12 @@ export class RaDioCore {
   }
 
   normalizeSettings(settings: RaDioSettings) {
-    return { ...settings, maxRepairAttempts: Math.min(3, Math.max(1, settings.maxRepairAttempts)), accountPool: { ...settings.accountPool, thresholdPercent: 5 } };
+    return {
+      ...settings,
+      takeoverEnabled: settings.mode === "full_autonomous" ? true : settings.takeoverEnabled,
+      stagingBranch: "staging",
+      maxRepairAttempts: Math.min(3, Math.max(1, settings.maxRepairAttempts)),
+      accountPool: { ...settings.accountPool, thresholdPercent: 5 }
+    };
   }
 }

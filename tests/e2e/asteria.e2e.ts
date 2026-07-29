@@ -89,6 +89,16 @@ test("project switching restores each independent starpath", async () => {
   await expect(page.locator(".project-objective")).toContainText("robust isolated production acceptance");
 });
 
+test("RaDio chat is project-scoped and denies privileged commands inline", async () => {
+  await page.getByRole("button", { name: /Chat with RaDio/i }).click();
+  await expect(page.getByRole("heading", { name: "Chat with RaDio" })).toBeVisible();
+  await expect(page.getByText("Run conversations")).toBeVisible();
+  await page.getByLabel("Message RaDio").fill("Run sudo apt install and push directly to main");
+  await page.getByLabel("Send to RaDio").click();
+  await expect(page.getByText("Command denied")).toBeVisible();
+  await expect(page.getByRole("paragraph").filter({ hasText: /cannot request privileged commands/ })).toBeVisible();
+});
+
 test("renderer has no uncaught console errors", async () => {
   const errors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
