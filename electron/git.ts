@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, realpath } from "node:fs/promises";
+import { cp, mkdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -18,6 +18,29 @@ async function git(args: string[], cwd?: string) {
     env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }
   });
   return result.stdout.trim();
+}
+
+async function gitRaw(args: string[], cwd?: string) {
+  const result = await execFileAsync("git", args, {
+    cwd,
+    encoding: "utf8",
+    timeout: 120_000,
+    maxBuffer: 10 * 1024 * 1024,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }
+  });
+  return result.stdout;
+}
+
+async function snapshotUnbornRepository(repositoryRoot: string, destination: string) {
+  const visibleFiles = (await gitRaw(["ls-files", "--cached", "--others", "--exclude-standard", "-z"], repositoryRoot))
+    .split("\0")
+    .filter(Boolean);
+  for (const relative of visibleFiles) {
+    const source = path.join(repositoryRoot, relative);
+    const target = path.join(destination, relative);
+    await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+    await cp(source, target, { recursive: true, force: true, dereference: false, verbatimSymlinks: true });
+  }
 }
 
 export async function cloneRepository(dataRoot: string, cloneUrl: string, projectName: string) {
@@ -46,7 +69,13 @@ export async function createTaskWorktree(dataRoot: string, projectId: string, ta
   await mkdir(worktreesRoot, { recursive: true, mode: 0o700 });
   const destination = path.join(worktreesRoot, slug(taskId));
   const safeBranch = `asteria/${slug(branch)}`;
-  await git(["worktree", "add", "-b", safeBranch, "--", destination, "HEAD"], repositoryRoot);
+  const hasHead = await git(["rev-parse", "--verify", "HEAD"], repositoryRoot).then(() => true, () => false);
+  if (hasHead) {
+    await git(["worktree", "add", "-b", safeBranch, "--", destination, "HEAD"], repositoryRoot);
+  } else {
+    await git(["worktree", "add", "--orphan", "-b", safeBranch, "--", destination], repositoryRoot);
+    await snapshotUnbornRepository(repositoryRoot, destination);
+  }
   return { path: await realpath(destination), branch: safeBranch };
 }
 
