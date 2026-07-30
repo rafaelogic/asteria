@@ -44,4 +44,8 @@ RaDio is Asteria’s isolated autonomous core. Orbits choose Guided or Ascendant
 
 RaDio provider sessions must expose the same locally available provider skills and companion developer tools as the owner’s Codex or Claude environment, while preserving Asteria’s repository, network, deployment, credential, and approval boundaries.
 
+RaDio must automatically investigate and fix errors it encounters, then activate and verify the corrected state instead of stopping at the first failure. It may activate appropriately skilled supporting agents, including planning, product-shaping, and QA specialists, whenever their expertise improves execution or validation.
+
+RaDio must commit completed repository changes. It must never push from `main`, `master`, or another non-staging branch. Before publishing changes to GitHub, RaDio must switch to the repository's `staging` branch or create `staging` when it does not exist; `staging` is RaDio's authorized working and publishing branch.
+
 Every repository change must bump Asteria’s version in both `package.json` and `package-lock.json`. Follow semantic versioning: use a patch bump by default, a minor bump for backward-compatible features, and a major bump for breaking changes.
