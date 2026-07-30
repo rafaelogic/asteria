@@ -14,7 +14,7 @@ import {
   PuzzlePieceIcon,
   SquaresFourIcon,
   UsersThreeIcon
-  ,RobotIcon
+  ,RobotIcon, BrainIcon
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -69,6 +69,7 @@ export function Sidebar({ screen, onChange, projects, activeProjectId, onProject
           <small>{projects.find((project) => project.id === activeProjectId)?.repository}</small>
         </label>
         <button className="new-project-button" onClick={onNewProject}><PlusIcon weight="bold" /> New project</button>
+        <button className={screen === "maintenance-radio" ? "radio-console-button active" : "radio-console-button"} onClick={() => onChange("maintenance-radio")}><BrainIcon weight="duotone" /><span><strong>RaDio</strong><small>Neural Console</small></span><i aria-label="Autonomous core available" /></button>
         <nav aria-label="Primary navigation">
           {items.map(({ id, label, icon: Icon }) => (
             <button key={id} className={screen === id ? "nav-item active" : "nav-item"} onClick={() => onChange(id)}>

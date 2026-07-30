@@ -1,4 +1,3 @@
-import { ArrowLeftIcon, ShieldCheckIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ApprovalSheet } from "./components/ApprovalSheet";
@@ -22,7 +21,6 @@ import { SkillsScreen } from "./screens/SkillsScreen";
 import { RadioChatScreen } from "./screens/RadioChatScreen";
 import { MaintenanceRadioScreen } from "./screens/MaintenanceRadioScreen";
 import { FloatingRaDio } from "./components/FloatingRaDio";
-import { Brand } from "./components/Brand";
 import type { Project, ProviderId } from "./types";
 import { isApplicationWorkspace, workspaceHistoryProjectId } from "./workspace";
 
@@ -271,7 +269,7 @@ export function App() {
     if (screen === "projects") return <ProjectsScreen projects={projects} activeProjectId={activeProject.id} onOpen={selectProject} onNew={startNewProject} />;
     if (screen === "workflow") return <WorkflowScreen project={activeProject} provider={activeProject.provider} onProvider={changeProvider} paused={Boolean(pausedProjects[activeProject.id])} onPause={() => void togglePause()} onExecute={() => void executeStage()} onApproval={() => setApprovalProject(activeProject.id)} onBack={() => navigate("projects")} />;
     if (screen === "radio-chat") return <RadioChatScreen project={activeProject} onProject={replaceProject} />;
-    if (screen === "maintenance-radio") return <MaintenanceRadioScreen projects={projects} onOpenProject={selectProject} />;
+    if (screen === "maintenance-radio") return <MaintenanceRadioScreen projects={projects} onReturn={() => navigate("projects")} />;
     if (screen === "ideas") return <IdeasScreen project={activeProject} onProject={replaceProject} />;
     if (screen === "kanban") return <KanbanScreen project={activeProject} onProject={replaceProject} />;
     if (screen === "threads") return <ThreadsScreen project={activeProject} onProject={replaceProject} />;
@@ -287,14 +285,6 @@ export function App() {
   if (isApplicationWorkspace(screen)) {
     return (
       <div className="maintenance-workspace">
-        <header className="maintenance-workspace-bar">
-          <div className="maintenance-workspace-brand">
-            <Brand />
-            <span aria-hidden="true" />
-            <div><strong>Maintenance workspace</strong><small><ShieldCheckIcon weight="fill" /> Application scope · isolated from Orbits</small></div>
-          </div>
-          <button className="button secondary" onClick={() => navigate("projects")}><ArrowLeftIcon /> Return to All projects</button>
-        </header>
         <motion.main key={screen} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
           {page}
         </motion.main>

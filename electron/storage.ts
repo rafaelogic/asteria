@@ -28,7 +28,13 @@ export function compactMaintenanceState(value: ApplicationMaintenanceSettings): 
       : message.body,
     cards: message.cards.slice(-20),
   }));
-  return { ...value, chat: { ...value.chat, messages } };
+  return {
+    ...value,
+    automation: value.automation ?? { enabled: true, paused: false, emergencyStopped: false, startupInspection: true, intervalMinutes: 30, dailyFeatureLimit: 1, cycleRunning: false, status: "idle", idleStatus: "Waiting for the next cycle", nextCycleAt: new Date(Date.now() + 30 * 60_000).toISOString() },
+    goals: value.goals ?? [],
+    findings: value.findings ?? [],
+    chat: { ...value.chat, messages }
+  };
 }
 
 export class MaintenanceRepository {
@@ -37,7 +43,7 @@ export class MaintenanceRepository {
     const row = this.db.prepare("SELECT value_json FROM settings WHERE key = 'radio.maintenance'").get() as { value_json: string } | undefined;
     if (row) return compactMaintenanceState(JSON.parse(row.value_json) as ApplicationMaintenanceSettings);
     const now = new Date().toISOString();
-    return { version: 1, provider: "codex", chat: { id: randomUUID(), messages: [], createdAt: now, updatedAt: now }, updatedAt: now };
+    return { version: 1, provider: "codex", automation: { enabled: true, paused: false, emergencyStopped: false, startupInspection: true, intervalMinutes: 30, dailyFeatureLimit: 1, cycleRunning: false, status: "idle", idleStatus: "Waiting for the next cycle", nextCycleAt: new Date(Date.now() + 30 * 60_000).toISOString() }, goals: [], findings: [], chat: { id: randomUUID(), messages: [], createdAt: now, updatedAt: now }, updatedAt: now };
   }
   save(value: ApplicationMaintenanceSettings, expectedVersion: number, idempotencyKey: string) {
     const prior = this.db.prepare("SELECT result_json FROM idempotency WHERE key = ?").get(idempotencyKey) as { result_json: string } | undefined;

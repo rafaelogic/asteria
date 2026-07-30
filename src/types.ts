@@ -264,11 +264,64 @@ export interface MaintenanceChat {
   createdAt: string;
   updatedAt: string;
 }
+export type MaintenancePanel = "goals" | "activity" | "findings" | "staging" | "automation";
+export type MaintenanceGoalStatus = "queued" | "inspecting" | "implementing" | "verifying" | "staging" | "completed" | "blocked" | "failed" | "cancelled";
+export interface MaintenanceGoal {
+  id: string;
+  type: "health" | "recovery" | "feature" | "owner";
+  title: string;
+  rationale: string;
+  priority: number;
+  status: MaintenanceGoalStatus;
+  currentAction: string;
+  assignedStar: string;
+  attempts: number;
+  sourceEvidence: string[];
+  findings: string[];
+  validation?: string[];
+  worktreePath?: string;
+  branch?: string;
+  commit?: string;
+  staging?: { status: "waiting" | "integrated" | "pushed" | "blocked"; commit?: string; remoteCommit?: string; detail: string };
+  blocker?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+export interface MaintenanceFinding {
+  id: string;
+  fingerprint: string;
+  category: "startup" | "renderer" | "storage" | "provider" | "git" | "packaging" | "installation" | "feature";
+  severity: "info" | "warning" | "error" | "critical";
+  title: string;
+  detail: string;
+  observedAt: string;
+  goalId?: string;
+}
+export interface MaintenanceAutomation {
+  enabled: boolean;
+  paused: boolean;
+  emergencyStopped: boolean;
+  startupInspection: boolean;
+  intervalMinutes: 30;
+  dailyFeatureLimit: 1;
+  lastCycleAt?: string;
+  nextCycleAt?: string;
+  lastFeatureDate?: string;
+  cycleRunning: boolean;
+  status: "idle" | "inspecting" | "implementing" | "verifying" | "staging" | "blocked" | "failed";
+  idleStatus: string;
+}
 export interface ApplicationMaintenanceSettings {
   version: number;
   provider: ProviderId;
   source?: ApplicationSourceBinding;
   chat: MaintenanceChat;
+  automation: MaintenanceAutomation;
+  goals: MaintenanceGoal[];
+  findings: MaintenanceFinding[];
+  activeGoalId?: string;
+  selectedPanel?: MaintenancePanel;
   pendingOperation?: { operationId: string; body: string; createdAt: string };
   updatedAt: string;
 }
@@ -635,6 +688,10 @@ export interface AsteriaApi {
     cancel(input: { expectedVersion: number; idempotencyKey: string; messageId: string }): Promise<ApplicationMaintenanceSettings>;
     selectSource(input: { expectedVersion: number; idempotencyKey: string; operationId: string; source: "folder" | "orbit"; projectId?: string }): Promise<ApplicationMaintenanceSettings>;
     disconnectSource(input: { expectedVersion: number; idempotencyKey: string }): Promise<ApplicationMaintenanceSettings>;
+    control(input: { expectedVersion: number; idempotencyKey: string; action: "run" | "pause" | "resume" | "emergency-stop" }): Promise<ApplicationMaintenanceSettings>;
+    goal(input: { expectedVersion: number; idempotencyKey: string; goalId: string; action: "cancel" | "retry" | "prioritize" }): Promise<ApplicationMaintenanceSettings>;
+    selectPanel(input: { expectedVersion: number; idempotencyKey: string; panel?: MaintenancePanel }): Promise<ApplicationMaintenanceSettings>;
+    subscribe(callback: (state: ApplicationMaintenanceSettings) => void): () => void;
   };
   installer: {
     state(): Promise<UserInstallState>;

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AgentEvent, AsteriaApi } from "../src/types.js";
+import type { AgentEvent, ApplicationMaintenanceSettings, AsteriaApi } from "../src/types.js";
 
 const api: AsteriaApi = {
   projects: {
@@ -51,7 +51,15 @@ const api: AsteriaApi = {
     send: (input) => ipcRenderer.invoke("maintenance:send", input),
     cancel: (input) => ipcRenderer.invoke("maintenance:cancel", input),
     selectSource: (input) => ipcRenderer.invoke("maintenance:select-source", input),
-    disconnectSource: (input) => ipcRenderer.invoke("maintenance:disconnect-source", input)
+    disconnectSource: (input) => ipcRenderer.invoke("maintenance:disconnect-source", input),
+    control: (input) => ipcRenderer.invoke("maintenance:control", input),
+    goal: (input) => ipcRenderer.invoke("maintenance:goal", input),
+    selectPanel: (input) => ipcRenderer.invoke("maintenance:select-panel", input),
+    subscribe: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: ApplicationMaintenanceSettings) => callback(state);
+      ipcRenderer.on("maintenance:updated", listener);
+      return () => ipcRenderer.removeListener("maintenance:updated", listener);
+    }
   },
   installer: {
     state: () => ipcRenderer.invoke("installer:state"),

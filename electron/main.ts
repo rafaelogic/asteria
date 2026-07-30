@@ -15,7 +15,8 @@ import {
   WorktreeSchema, ProviderAccountAddSchema, ProviderAccountUpdateSchema, RaDioSettingsMutationSchema, MutationSchema,
   RaDioIdeaMutationSchema, RaDioHandoffSchema, SkillConfigureSchema, SkillCancelSchema, MemoryAddSchema, MemoryForgetSchema,
   TakeoverControlSchema, ChatSendSchema, ChatCancelSchema, HealthSignalSchema,
-  MaintenanceSendSchema, MaintenanceCancelSchema, MaintenanceSourceSchema, MaintenanceMutationSchema
+  MaintenanceSendSchema, MaintenanceCancelSchema, MaintenanceSourceSchema, MaintenanceMutationSchema,
+  MaintenanceControlSchema, MaintenanceGoalSchema, MaintenancePanelSchema
 } from "./contracts.js";
 import { checkpoint, cloneRepository, createTaskWorktree, promoteFastForwardToStaging, repositoryStatus } from "./git.js";
 import {
@@ -54,10 +55,11 @@ let telemetry: LocalTelemetry;
 let accountVault: RaDioAccountVault;
 let radio: RaDioCore;
 let previewManager: PreviewManager;
+let maintenanceCycleTimer: NodeJS.Timeout | undefined;
 const hostValidationManager = new HostValidationManager();
 const skillRegistry = new SkillRegistry();
 const skillRuntime = new SkillRuntime(skillRegistry);
-const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude"; kind?: "workflow" | "chat" | "maintenance" | "authentication" | "repair" | "verification"; chatMessageId?: string; incidentId?: string; worktreePath?: string; profileId?: string; authUrlOpened?: boolean; hostPreview?: boolean; hostValidation?: HostValidationId[] }>();
+const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude"; kind?: "workflow" | "chat" | "maintenance" | "authentication" | "repair" | "verification"; chatMessageId?: string; incidentId?: string; maintenanceGoalId?: string; sourceRepositoryPath?: string; worktreePath?: string; profileId?: string; authUrlOpened?: boolean; hostPreview?: boolean; hostValidation?: HostValidationId[] }>();
 const pendingAttachments = new Map<string, Map<string, import("../src/types.js").RaDioChatAttachment>>();
 const runningProjectSessions = new Map<string, Set<string>>();
 const failedProjectSessions = new Set<string>();
@@ -246,12 +248,14 @@ app.whenReady().then(async () => {
   });
   createWindow();
   setTimeout(() => store.projects.list().filter((project) => project.radio.mode === "full_autonomous" && project.radio.autoResume && project.takeover.enabled).forEach((project) => void continueTakeover(project.id)), 1_000);
+  setTimeout(() => void runMaintenanceInspection("startup"), 1_500);
+  maintenanceCycleTimer = setInterval(() => void runMaintenanceInspection("schedule"), 30 * 60_000);
   telemetry.record({ projectId: "application", runId: "lifecycle", kind: "application", name: "application_started", outcome: "started", payload: { version: app.getVersion(), platform: process.platform } });
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-app.on("before-quit", () => { networkProxy.close(); void previewManager?.close(); store?.close(); });
+app.on("before-quit", () => { if (maintenanceCycleTimer) clearInterval(maintenanceCycleTimer); networkProxy.close(); void previewManager?.close(); store?.close(); });
 
 async function launchRepair(projectId: string, incidentId: string) {
   const project = store.projects.get(projectId);
@@ -418,27 +422,136 @@ function validationEvidenceSummary(evidence: HostValidationEvidence) {
   return `trusted host validation ${evidence.passed ? "passed" : "failed"} — ${checks}. Evidence digest ${evidence.digest.slice(0, 12)}.`;
 }
 
-async function finishMaintenanceHostWork(sessionId: string, context: NonNullable<ReturnType<typeof sessionContext.get>>) {
+const idleStatuses = ["Coffee break", "Waiting for the next cycle", "Reviewing the goal queue"];
+
+async function runMaintenanceInspection(trigger: "startup" | "schedule" | "manual") {
+  const current = store.maintenance.get();
+  if (!current.automation.enabled || current.automation.paused || current.automation.emergencyStopped || current.automation.cycleRunning) return current;
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const today = nowIso.slice(0, 10);
+  const projects = store.projects.list();
+  const openIncidents = projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved").map((incident) => ({ project, incident })));
+  const existingFingerprints = new Set(current.findings.map((finding) => finding.fingerprint));
+  const findings = [...current.findings];
+  const goals = [...current.goals];
+  for (const { project, incident } of openIncidents) {
+    const fingerprint = `${project.id}:${incident.fingerprint}`;
+    if (existingFingerprints.has(fingerprint)) continue;
+    const goalId = randomUUID();
+    findings.unshift({ id: randomUUID(), fingerprint, category: incident.category === "packaging" ? "packaging" : incident.category === "startup" ? "startup" : incident.category === "storage" ? "storage" : incident.category === "git" ? "git" : incident.category === "provider" ? "provider" : "renderer", severity: incident.severity, title: incident.title, detail: incident.detail, observedAt: nowIso, goalId });
+    goals.unshift({ id: goalId, type: "health", title: `Repair ${incident.title}`, rationale: `Detected in ${project.name} during ${trigger} inspection.`, priority: incident.severity === "critical" ? 100 : 90, status: "queued", currentAction: "Waiting for an isolated repair worktree", assignedStar: incident.owner, attempts: 0, sourceEvidence: [fingerprint], findings: [incident.detail], createdAt: nowIso, updatedAt: nowIso });
+  }
+  let lastFeatureDate = current.automation.lastFeatureDate;
+  if (current.source && lastFeatureDate !== today && !goals.some((goal) => goal.type === "feature" && !["completed", "cancelled", "failed"].includes(goal.status))) {
+    const goalId = randomUUID();
+    const fingerprint = `feature-scout:${today}`;
+    findings.unshift({ id: randomUUID(), fingerprint, category: "feature", severity: "info", title: "Daily local value scan", detail: "Review local incidents, maintenance conversations, tests, and code friction for one high-value improvement.", observedAt: nowIso, goalId });
+    goals.push({ id: goalId, type: "feature", title: "Scout one valuable local improvement", rationale: "Daily feature budget is available and a validated Asteria source is bound.", priority: 30, status: "queued", currentAction: "Ranking local evidence before implementation", assignedStar: "Product Planner", attempts: 0, sourceEvidence: [fingerprint], findings: [], createdAt: nowIso, updatedAt: nowIso });
+    lastFeatureDate = today;
+  }
+  const active = goals.filter((goal) => !["completed", "cancelled", "failed"].includes(goal.status)).sort((left, right) => right.priority - left.priority)[0];
+  const updated = store.maintenance.save({
+    ...current,
+    goals: goals.slice(0, 200),
+    findings: findings.slice(0, 300),
+    activeGoalId: active?.id,
+    automation: {
+      ...current.automation,
+      cycleRunning: false,
+      status: active ? active.status === "blocked" ? "blocked" : "idle" : "idle",
+      lastCycleAt: nowIso,
+      nextCycleAt: new Date(now.getTime() + current.automation.intervalMinutes * 60_000).toISOString(),
+      lastFeatureDate,
+      idleStatus: idleStatuses[Math.floor(now.getMinutes() / 10) % idleStatuses.length]
+    }
+  }, current.version, `maintenance_cycle_${trigger}_${now.getTime()}`);
+  window?.webContents.send("maintenance:updated", updated);
+  if (active?.type === "feature" && active.status === "queued" && updated.source) {
+    const responseId = randomUUID();
+    const launchedAt = new Date().toISOString();
+    const withConversation = store.maintenance.save({
+      ...updated,
+      chat: {
+        ...updated.chat,
+        updatedAt: launchedAt,
+        messages: [...updated.chat.messages, {
+          id: responseId,
+          author: "radio" as const,
+          body: "",
+          operationId: active.id,
+          status: "streaming" as const,
+          requiresSource: true,
+          cards: [],
+          createdAt: launchedAt,
+          redacted: true as const
+        }]
+      }
+    }, updated.version, `maintenance_feature_launch_${active.id}`);
+    window?.webContents.send("maintenance:updated", withConversation);
+    await startMaintenanceProvider(withConversation, responseId, "Inspect only local Asteria evidence, select the single highest-value safe improvement, implement it, add regression coverage, and explain the evidence. Do not perform external research.", active.id);
+    return store.maintenance.get();
+  }
+  return updated;
+}
+
+async function finishMaintenanceHostWork(sessionId: string, context: NonNullable<ReturnType<typeof sessionContext.get>>, providerSucceeded: boolean) {
   const notes: string[] = [];
+  let verified = providerSucceeded;
   if (context.hostValidation?.length && context.worktreePath) {
     try {
       const evidence = await hostValidationManager.run(context.worktreePath, context.hostValidation);
       notes.push(`Host validation evidence: ${validationEvidenceSummary(evidence)}`);
       const failures = evidence.checks.filter((check) => !check.passed);
+      verified = verified && failures.length === 0;
       for (const failure of failures) {
         notes.push(`${failure.label} output:\n${failure.output.slice(-2_000) || "No process output was captured."}`);
       }
     } catch (error) {
+      verified = false;
       notes.push(`Host validation evidence: validation failed — ${redactSecrets(error instanceof Error ? error.message : "Trusted host validation could not run.")}`);
     }
   }
   if (context.hostPreview) {
     try {
-      notes.push(`Host preview evidence: ${previewEvidenceSummary(await previewManager.verify(sessionId))}`);
+      const evidence = await previewManager.verify(sessionId);
+      notes.push(`Host preview evidence: ${previewEvidenceSummary(evidence)}`);
+      verified = verified && Boolean(evidence.title && evidence.rootText) && evidence.consoleErrors.length === 0;
     } catch (error) {
+      verified = false;
       notes.push(`Host preview evidence: verification failed — ${redactSecrets(error instanceof Error ? error.message : "Host preview verification failed.")}`);
     } finally {
       await previewManager.stop(sessionId);
+    }
+  }
+  if (context.maintenanceGoalId && context.worktreePath && context.sourceRepositoryPath) {
+    const current = store.maintenance.get();
+    const goal = current.goals.find((item) => item.id === context.maintenanceGoalId);
+    if (goal) {
+      const now = new Date().toISOString();
+      try {
+        if (!verified) throw new Error("Provider execution or trusted-host verification did not pass.");
+        const saved = await checkpoint(context.worktreePath, `feat: complete internal RaDio goal ${goal.id.slice(0, 8)}`);
+        const promotion = await promoteFastForwardToStaging(app.getPath("userData"), "application", context.sourceRepositoryPath, saved.commit);
+        const promoted = store.maintenance.save({
+          ...current,
+          activeGoalId: current.activeGoalId === goal.id ? undefined : current.activeGoalId,
+          goals: current.goals.map((item) => item.id === goal.id ? { ...item, status: "completed" as const, currentAction: "Checkpoint pushed to origin/staging", commit: saved.commit, staging: { status: "pushed" as const, commit: promotion.commit, remoteCommit: promotion.remoteCommit, detail: "Fast-forwarded and pushed only to origin/staging." }, completedAt: now, updatedAt: now } : item),
+          automation: { ...current.automation, status: "idle", idleStatus: "Reviewing the goal queue" }
+        }, current.version, `maintenance_promoted_${goal.id}_${Date.now()}`);
+        notes.push(`Staging evidence: checkpoint ${saved.commit.slice(0, 12)} pushed to origin/staging (${promotion.remoteCommit.slice(0, 12)}).`);
+        window?.webContents.send("maintenance:updated", promoted);
+      } catch (error) {
+        const latest = store.maintenance.get();
+        const detail = redactSecrets(error instanceof Error ? error.message : "The verified checkpoint could not be promoted.");
+        const blocked = store.maintenance.save({
+          ...latest,
+          goals: latest.goals.map((item) => item.id === goal.id ? { ...item, status: "blocked" as const, currentAction: "Waiting for staging retry", blocker: detail, staging: { status: "blocked" as const, commit: item.commit, detail }, updatedAt: now } : item),
+          automation: { ...latest.automation, status: "blocked" }
+        }, latest.version, `maintenance_staging_blocked_${goal.id}_${Date.now()}`);
+        notes.push(`Staging evidence: blocked — ${detail} The isolated worktree was preserved.`);
+        window?.webContents.send("maintenance:updated", blocked);
+      }
     }
   }
   if (!notes.length || !context.chatMessageId) return;
@@ -457,19 +570,35 @@ async function finishMaintenanceHostWork(sessionId: string, context: NonNullable
   window?.webContents.send("maintenance:updated", updated);
 }
 
-async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, responseId: string, body: string) {
-  const workspace = state.source?.path ?? path.join(app.getPath("userData"), "maintenance-radio", "workspace");
+async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, responseId: string, body: string, goalId?: string) {
+  let workspace = state.source?.path ?? path.join(app.getPath("userData"), "maintenance-radio", "workspace");
   await mkdir(workspace, { recursive: true, mode: 0o700 });
   if (state.source) await validateAsteriaSource(state.source.path);
   const sessionId = `maintenance_${responseId.slice(0, 8)}`;
   const account = selectApplicationRaDioAccount(accountVault.list(), state.provider, ["structured-stream", "cancellation", "isolated-home", "tool-events"]);
-  const context = await createIsolationContext(app.getPath("userData"), sessionId, workspace, state.provider, account?.id);
   const hostPreview = maintenanceUsesHostPreview(Boolean(state.source), body);
   const hostValidation = validationChecksForMaintenance(Boolean(state.source), body);
+  let branch: string | undefined;
+  if (state.source && hostValidation.length) {
+    const worktree = await createTaskWorktree(app.getPath("userData"), "application", goalId ?? responseId, state.source.path, `internal-${(goalId ?? responseId).slice(0, 12)}`);
+    workspace = worktree.path;
+    branch = worktree.branch;
+    if (goalId) {
+      const current = store.maintenance.get();
+      const started = store.maintenance.save({
+        ...current,
+        activeGoalId: goalId,
+        goals: current.goals.map((goal) => goal.id === goalId ? { ...goal, status: "implementing" as const, attempts: goal.attempts + 1, currentAction: "Working in an isolated branch", worktreePath: workspace, branch, updatedAt: new Date().toISOString() } : goal),
+        automation: { ...current.automation, status: "implementing" }
+      }, current.version, `maintenance_goal_started_${goalId}_${Date.now()}`);
+      window?.webContents.send("maintenance:updated", started);
+    }
+  }
+  const context = await createIsolationContext(app.getPath("userData"), sessionId, workspace, state.provider, account?.id);
   let previewEvidence: PreviewEvidence | undefined;
   if (hostPreview) {
     try {
-      previewEvidence = await previewManager.start(sessionId, state.source!.path);
+      previewEvidence = await previewManager.start(sessionId, workspace);
     } catch (error) {
       const current = store.maintenance.get();
       const now = new Date().toISOString();
@@ -482,7 +611,7 @@ async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, r
       return failed;
     }
   }
-  sessionContext.set(sessionId, { projectId: "application", runId: "maintenance", role: "RaDio", provider: state.provider, kind: "maintenance", chatMessageId: responseId, profileId: account?.id, hostPreview, hostValidation, worktreePath: state.source?.path });
+  sessionContext.set(sessionId, { projectId: "application", runId: "maintenance", role: "RaDio", provider: state.provider, kind: "maintenance", chatMessageId: responseId, profileId: account?.id, hostPreview, hostValidation, worktreePath: workspace, sourceRepositoryPath: state.source?.path, maintenanceGoalId: goalId });
   const projects = store.projects.list();
   const openIncidents = projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved"));
   const install = await readUserInstallState();
@@ -552,7 +681,7 @@ providers.on("event", (sessionId: string, event) => {
     window?.webContents.send("maintenance:updated", updated);
     if (terminal) {
       sessionContext.delete(sessionId);
-      if (context.hostPreview || context.hostValidation?.length) void finishMaintenanceHostWork(sessionId, context);
+      if (context.hostPreview || context.hostValidation?.length) void finishMaintenanceHostWork(sessionId, context, event.type === "completed");
     }
     return;
   }
@@ -984,6 +1113,52 @@ ipcMain.handle("radio-chat:cancel", (_event, raw) => {
   return store.projects.save({ ...project, radioChats: chats }, input.expectedVersion, input.idempotencyKey);
 });
 ipcMain.handle("maintenance:state", () => store.maintenance.get());
+ipcMain.handle("maintenance:control", async (_event, raw) => {
+  const input = MaintenanceControlSchema.parse(raw);
+  const current = store.maintenance.get();
+  if (current.version !== input.expectedVersion) throw new Error("Maintenance RaDio changed. Refresh before controlling automation.");
+  if (input.action === "emergency-stop") {
+    for (const [sessionId, context] of sessionContext) {
+      if (context.kind !== "maintenance") continue;
+      providers.cancel(sessionId);
+      sessionContext.delete(sessionId);
+      if (context.hostPreview) void previewManager.stop(sessionId);
+    }
+  }
+  const now = new Date().toISOString();
+  const automation = input.action === "pause"
+    ? { ...current.automation, paused: true, status: "idle" as const, idleStatus: "Paused by owner" }
+    : input.action === "emergency-stop"
+      ? { ...current.automation, paused: true, emergencyStopped: true, cycleRunning: false, status: "failed" as const, idleStatus: "Emergency stopped" }
+      : { ...current.automation, enabled: true, paused: false, emergencyStopped: false, idleStatus: "Reviewing the goal queue" };
+  const updated = store.maintenance.save({ ...current, automation, updatedAt: now }, input.expectedVersion, input.idempotencyKey);
+  window?.webContents.send("maintenance:updated", updated);
+  if (input.action === "run" || input.action === "resume") return await runMaintenanceInspection("manual") ?? store.maintenance.get();
+  return updated;
+});
+ipcMain.handle("maintenance:goal", (_event, raw) => {
+  const input = MaintenanceGoalSchema.parse(raw);
+  const current = store.maintenance.get();
+  if (current.version !== input.expectedVersion) throw new Error("Maintenance RaDio changed. Refresh before changing the goal.");
+  const now = new Date().toISOString();
+  const goals = current.goals.map((goal) => {
+    if (goal.id !== input.goalId) return goal;
+    if (input.action === "cancel") return { ...goal, status: "cancelled" as const, currentAction: "Cancelled by owner", completedAt: now, updatedAt: now };
+    if (input.action === "prioritize") return { ...goal, priority: 110, updatedAt: now };
+    if (goal.attempts >= 3) return { ...goal, status: "blocked" as const, blocker: "The three-attempt limit is exhausted.", updatedAt: now };
+    return { ...goal, status: "queued" as const, blocker: undefined, currentAction: "Queued for another isolated attempt", updatedAt: now };
+  });
+  const updated = store.maintenance.save({ ...current, goals }, input.expectedVersion, input.idempotencyKey);
+  window?.webContents.send("maintenance:updated", updated);
+  return updated;
+});
+ipcMain.handle("maintenance:select-panel", (_event, raw) => {
+  const input = MaintenancePanelSchema.parse(raw);
+  const current = store.maintenance.get();
+  const updated = store.maintenance.save({ ...current, selectedPanel: input.panel }, input.expectedVersion, input.idempotencyKey);
+  window?.webContents.send("maintenance:updated", updated);
+  return updated;
+});
 ipcMain.handle("maintenance:send", async (_event, raw) => {
   const input = MaintenanceSendSchema.parse(raw);
   let current = store.maintenance.get();
@@ -996,6 +1171,7 @@ ipcMain.handle("maintenance:send", async (_event, raw) => {
   const now = new Date().toISOString();
   const human = { id: randomUUID(), author: "human" as const, body: redactSecrets(input.body), operationId: input.operationId, status: "completed" as const, requiresSource, cards: [], createdAt: now, completedAt: now, redacted: true as const };
   const responseId = randomUUID();
+  const goalId = requiresSource ? randomUUID() : undefined;
   const waiting = requiresSource && !current.source;
   const radioMessage = {
     id: responseId, author: "radio" as const,
@@ -1006,11 +1182,13 @@ ipcMain.handle("maintenance:send", async (_event, raw) => {
   };
   const updated = store.maintenance.save({
     ...current,
+    activeGoalId: goalId ?? current.activeGoalId,
+    goals: goalId ? [{ id: goalId, type: "owner" as const, title: redactSecrets(input.body).slice(0, 120), rationale: "Durable goal created from the owner conversation.", priority: 80, status: waiting ? "blocked" as const : "queued" as const, currentAction: waiting ? "Waiting for a validated Asteria source" : "Preparing an isolated worktree", assignedStar: "RaDio", attempts: 0, sourceEvidence: [`conversation:${input.operationId}`], findings: [], blocker: waiting ? "A validated source binding is required." : undefined, createdAt: now, updatedAt: now }, ...current.goals] : current.goals,
     pendingOperation: waiting ? { operationId: input.operationId, body: input.body, createdAt: now } : undefined,
     chat: { ...current.chat, updatedAt: now, messages: [...current.chat.messages, human, radioMessage] },
   }, input.expectedVersion, input.idempotencyKey);
   window?.webContents.send("maintenance:updated", updated);
-  if (!waiting) await startMaintenanceProvider(updated, responseId, input.body);
+  if (!waiting) await startMaintenanceProvider(updated, responseId, input.body, goalId);
   return store.maintenance.get();
 });
 ipcMain.handle("maintenance:select-source", async (_event, raw) => {
@@ -1040,7 +1218,12 @@ ipcMain.handle("maintenance:select-source", async (_event, raw) => {
     chat: { ...current.chat, updatedAt: now, messages: current.chat.messages.map((message) => message.id === response.id ? { ...message, body: "", status: "streaming" as const, cards: message.cards.map((card) => ({ ...card, status: "completed" as const, completedAt: now })) } : message) },
   }, input.expectedVersion, input.idempotencyKey);
   window?.webContents.send("maintenance:updated", updated);
-  await startMaintenanceProvider(updated, response.id, current.pendingOperation.body);
+  const goalId = updated.goals.find((goal) => goal.sourceEvidence.includes(`conversation:${input.operationId}`))?.id;
+  if (goalId) {
+    const latest = store.maintenance.get();
+    store.maintenance.save({ ...latest, goals: latest.goals.map((goal) => goal.id === goalId ? { ...goal, status: "queued" as const, blocker: undefined, currentAction: "Preparing an isolated worktree", updatedAt: now } : goal) }, latest.version, `maintenance_source_goal_${goalId}`);
+  }
+  await startMaintenanceProvider(store.maintenance.get(), response.id, current.pendingOperation.body, goalId);
   return store.maintenance.get();
 });
 ipcMain.handle("maintenance:disconnect-source", (_event, raw) => {

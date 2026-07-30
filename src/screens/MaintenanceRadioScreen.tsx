@@ -1,13 +1,26 @@
-import { memo, useEffect, useMemo, useState } from "react";
-import { ArrowUpIcon, CheckCircleIcon, FolderOpenIcon, HardDrivesIcon, LightbulbIcon, MagicWandIcon, PulseIcon, RobotIcon, StopCircleIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
+import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  ActivityIcon, ArrowLeftIcon, ArrowUpIcon, BrainIcon, CheckCircleIcon, CoffeeIcon, FolderOpenIcon,
+  GitBranchIcon, MagicWandIcon, PauseIcon, PlayIcon, RobotIcon, SlidersHorizontalIcon, StopCircleIcon,
+  TargetIcon, WarningIcon, XIcon
+} from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
+import { Brand } from "../components/Brand";
 import { SafeMarkdownPreview } from "../components/RichPreview";
-import type { ApplicationMaintenanceSettings, Project, UserInstallState } from "../types";
-import { useRadioReadiness } from "../hooks/useRadioReadiness";
 import { ResponseActivity } from "../components/ResponseActivity";
 import { useConversationAutoScroll } from "../hooks/useConversationAutoScroll";
+import { useRadioReadiness } from "../hooks/useRadioReadiness";
+import type { ApplicationMaintenanceSettings, MaintenancePanel, Project, UserInstallState } from "../types";
 
 const MaintenanceMarkdown = memo(SafeMarkdownPreview);
+
+const panels: Array<{ id: MaintenancePanel; label: string; icon: typeof TargetIcon }> = [
+  { id: "goals", label: "Goals", icon: TargetIcon },
+  { id: "activity", label: "Activity", icon: ActivityIcon },
+  { id: "findings", label: "Findings", icon: WarningIcon },
+  { id: "staging", label: "Staging", icon: GitBranchIcon },
+  { id: "automation", label: "Automation", icon: SlidersHorizontalIcon },
+];
 
 export function improveMaintenancePrompt(value: string) {
   const clean = value.trim().replace(/\s+/g, " ");
@@ -22,94 +35,124 @@ export function improveMaintenancePrompt(value: string) {
   return `${request}${needsEvidence ? " Inspect the relevant Asteria state first, preserve unrelated changes, and report the evidence from each verification." : " Use the current application state and keep the response focused on Asteria maintenance."}`;
 }
 
-export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: Project[]; onOpenProject: (projectId: string) => void }) {
+function NeuralBrain({ state, theme }: { state?: ApplicationMaintenanceSettings; theme: MaintenancePanel | "idle" }) {
+  const active = state?.automation.status ?? "idle";
+  const working = ["inspecting", "implementing", "verifying", "staging"].includes(active);
+  return <div className={`neural-brain theme-${theme} state-${active}${working ? " working" : ""}`} role="img" aria-label={`RaDio is ${active}. ${state?.automation.idleStatus ?? "Waiting for application state."}`}>
+    <svg viewBox="0 0 500 420" aria-hidden="true">
+      <defs><filter id="neural-glow"><feGaussianBlur stdDeviation="5" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter></defs>
+      <g className="neural-links">
+        {["70,210 140,120 245,90 360,125 430,215","70,210 145,300 250,330 365,295 430,215","140,120 175,205 245,90 330,210 360,125","145,300 175,205 250,330 330,210 365,295","175,205 250,150 330,210 250,270 175,205","250,90 250,150 250,270 250,330"].map((points) => <polyline key={points} points={points} />)}
+      </g>
+      <path className="brain-outline" d="M247 53c-45-31-112 0-112 53-55 2-77 68-42 104-34 45-6 105 43 108 9 52 74 69 111 34 38 35 103 18 112-34 49-3 77-63 43-108 35-36 13-102-42-104 0-53-68-84-113-53Z" />
+      <path className="brain-split" d="M247 54v298" />
+      <g className="neural-nodes">{[[70,210],[140,120],[245,90],[360,125],[430,215],[145,300],[250,330],[365,295],[175,205],[250,150],[330,210],[250,270]].map(([cx,cy], index) => <circle key={index} cx={cx} cy={cy} r={index % 3 === 0 ? 8 : 5} />)}</g>
+    </svg>
+    {!working && active !== "failed" && <div className="coffee-break"><CoffeeIcon weight="duotone" /><span>{state?.automation.idleStatus ?? "Coffee break"}</span></div>}
+  </div>;
+}
+
+export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Project[]; onReturn: () => void }) {
   const [install, setInstall] = useState<UserInstallState>({ rollbackReady: false });
   const [state, setState] = useState<ApplicationMaintenanceSettings>();
+  const [panel, setPanel] = useState<MaintenancePanel>();
+  const [chatOpen, setChatOpen] = useState(false);
   const [body, setBody] = useState("");
   const [selectedOrbit, setSelectedOrbit] = useState("");
   const [error, setError] = useState("");
-  const [promptImproved, setPromptImproved] = useState(false);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
   const { messagesRef, handleMessagesScroll, resumeAutoScroll } = useConversationAutoScroll(state?.chat.messages);
   const readiness = useRadioReadiness(state?.provider ?? "codex");
+  const activeGoal = state?.goals.find((goal) => goal.id === state.activeGoalId);
   const localOrbits = projects.filter((project) => project.repositoryPath);
+  const isStreaming = state?.chat.messages.some((message) => message.status === "streaming") ?? false;
+
   useEffect(() => {
     void window.asteria?.installer.state().then(setInstall);
-    void window.asteria?.maintenance.state().then(setState);
+    void window.asteria?.maintenance.state().then((value) => { setState(value); setPanel(value.selectedPanel); });
+    return window.asteria?.maintenance.subscribe(setState);
   }, []);
   useEffect(() => {
-    if (!state?.chat.messages.some((message) => message.status === "streaming")) return;
-    const timer = window.setInterval(() => void window.asteria?.maintenance.state().then(setState), 800);
-    return () => window.clearInterval(timer);
-  }, [state?.chat.messages]);
-  const incidents = useMemo(() => projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved").map((incident) => ({ project, incident }))), [projects]);
-  const observations = useMemo(() => projects.reduce((total, project) => total + project.artifacts.length, 0), [projects]);
-  const pending = state?.pendingOperation;
-  const isStreaming = state?.chat.messages.some((message) => message.status === "streaming") ?? false;
-  const starters = incidents.length
-    ? ["Summarize unresolved incidents and recommend the safest next action.", "Check installation health and rollback readiness.", "Prepare a concise maintenance report with verification evidence."]
-    : ["Give me an Asteria health summary.", "Check installation and rollback readiness.", "Explain what Maintenance RaDio can safely inspect."];
+    const pop = (event: PopStateEvent) => setPanel((event.state as { radioPanel?: MaintenancePanel } | null)?.radioPanel);
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (panel) void choosePanel(undefined, false);
+      else if (chatOpen) setChatOpen(false);
+      else onReturn();
+    };
+    window.addEventListener("popstate", pop);
+    window.addEventListener("keydown", key);
+    return () => { window.removeEventListener("popstate", pop); window.removeEventListener("keydown", key); };
+  });
 
+  const choosePanel = async (next?: MaintenancePanel, push = true) => {
+    setPanel(next);
+    if (push) window.history.pushState({ ...(window.history.state ?? {}), radioPanel: next }, "");
+    if (window.asteria && state) {
+      try { setState(await window.asteria.maintenance.selectPanel({ expectedVersion: state.version, idempotencyKey: `panel_${crypto.randomUUID()}`, panel: next })); } catch { /* subscription will reconcile */ }
+    }
+  };
+  const control = async (action: "run" | "pause" | "resume" | "emergency-stop") => {
+    if (!window.asteria || !state) return;
+    setError("");
+    try { setState(await window.asteria.maintenance.control({ expectedVersion: state.version, idempotencyKey: `automation_${crypto.randomUUID()}`, action })); }
+    catch (value) { setError(value instanceof Error ? value.message : "Automation control failed."); }
+  };
+  const goalAction = async (goalId: string, action: "cancel" | "retry" | "prioritize") => {
+    if (!window.asteria || !state) return;
+    setState(await window.asteria.maintenance.goal({ expectedVersion: state.version, idempotencyKey: `goal_${crypto.randomUUID()}`, goalId, action }));
+  };
   const send = async () => {
     if (!window.asteria || !state || !body.trim() || !readiness.ready) return;
-    resumeAutoScroll();
-    const submittedBody = body;
-    setError("");
+    resumeAutoScroll(); setError("");
+    const submitted = body;
     try {
       const latest = await window.asteria.maintenance.state();
-      const updated = await window.asteria.maintenance.send({ expectedVersion: latest.version, idempotencyKey: `maintenance_${crypto.randomUUID()}`, operationId: crypto.randomUUID(), body: submittedBody });
-      setState(updated);
-      setBody((current) => current === submittedBody ? "" : current);
-      setPromptImproved(false);
-    } catch (value) { setError(value instanceof Error ? value.message : "Maintenance RaDio could not send this message."); }
+      setState(await window.asteria.maintenance.send({ expectedVersion: latest.version, idempotencyKey: `maintenance_${crypto.randomUUID()}`, operationId: crypto.randomUUID(), body: submitted }));
+      setBody("");
+    } catch (value) { setError(value instanceof Error ? value.message : "RaDio could not send this prompt."); }
   };
   const selectSource = async (source: "folder" | "orbit") => {
-    if (!window.asteria || !state || !pending) return;
-    setError("");
-    try {
-      setState(await window.asteria.maintenance.selectSource({ expectedVersion: state.version, idempotencyKey: `maintenance_source_${crypto.randomUUID()}`, operationId: pending.operationId, source, projectId: source === "orbit" ? selectedOrbit : undefined }));
-    } catch (value) { setError(value instanceof Error ? value.message : "The Asteria source could not be validated."); }
+    if (!window.asteria || !state?.pendingOperation) return;
+    setState(await window.asteria.maintenance.selectSource({ expectedVersion: state.version, idempotencyKey: `source_${crypto.randomUUID()}`, operationId: state.pendingOperation.operationId, source, projectId: source === "orbit" ? selectedOrbit : undefined }));
   };
-  const disconnect = async () => {
-    if (window.asteria && state) setState(await window.asteria.maintenance.disconnectSource({ expectedVersion: state.version, idempotencyKey: `maintenance_disconnect_${crypto.randomUUID()}` }));
-  };
-  const cancel = async (messageId: string) => {
-    if (window.asteria && state) setState(await window.asteria.maintenance.cancel({ expectedVersion: state.version, idempotencyKey: `maintenance_cancel_${crypto.randomUUID()}`, messageId }));
-  };
+  const nextCycle = state?.automation.nextCycleAt ? new Date(state.automation.nextCycleAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "after startup";
+  const theme = panel ?? "idle";
 
-  return <div className="screen maintenance-radio-screen">
-    <header className="screen-header"><div><span className="eyebrow">Independent application workspace</span><h1><RobotIcon weight="duotone" /> Maintenance RaDio</h1><p>Health, installation, recovery, incidents, and reports for Asteria itself. This conversation is not attached to the active Orbit.</p></div>{state?.source && <button className="button secondary" onClick={() => void disconnect()}><XIcon /> Disconnect source</button>}</header>
-    <section className="maintenance-summary">
-      <motion.article initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}><PulseIcon /><span><small>Application health</small><strong>{incidents.length ? "Attention required" : "Healthy"}</strong><p>{incidents.length} unresolved incident{incidents.length === 1 ? "" : "s"} across {projects.length} Orbits</p></span></motion.article>
-      <motion.article initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .06 }}><HardDrivesIcon /><span><small>Installed release</small><strong>{install.currentVersion ?? "Development"}</strong><p>{install.rollbackReady ? `Rollback ready${install.previousVersion ? ` · ${install.previousVersion}` : ""}` : "No previous user release"}</p></span></motion.article>
-      <motion.article initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .12 }}><CheckCircleIcon /><span><small>Source access</small><strong>{state?.source ? "Validated" : "Just in time"}</strong><p>{state?.source ? `${state.source.repository} · ${state.source.source}` : "Requested only for code work"}</p></span></motion.article>
-    </section>
-    <div className="maintenance-layout">
-      <section className="maintenance-chat">
-        <header><span><strong>Application conversation</strong><small>{observations} encrypted Observations available</small></span><b>{state?.provider ?? "codex"}</b></header>
-        <div className="maintenance-messages" ref={messagesRef} onScroll={handleMessagesScroll}><AnimatePresence initial={false}>{state?.chat.messages.length ? state.chat.messages.map((message) => <motion.article initial={{ opacity: 0, y: 10, scale: .99 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: .24 }} key={message.id} className={message.author}>
-          <span>{message.author === "radio" ? <RobotIcon weight="duotone" /> : "You"}</span>
-          <div><header><strong>{message.author === "radio" ? "Maintenance RaDio" : "Rafael"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MaintenanceMarkdown content={message.body} fallbackLabel="Report preview unavailable — showing source text" />}
-            {message.status === "streaming" && <ResponseActivity hasContent={Boolean(message.body)} />}
-            {message.status === "waiting_for_source" && pending?.operationId === message.operationId && <div className="source-required-card">
-              <FolderOpenIcon /><div><strong>Asteria source required</strong><p>Choose a repository only when RaDio begins code analysis. Its path stays out of provider prompts.</p>
-                <button className="button primary" onClick={() => void selectSource("folder")}>Choose Asteria repository</button>
-                {localOrbits.length > 0 && <div className="source-orbit-row"><select aria-label="Existing local Orbit" value={selectedOrbit} onChange={(event) => setSelectedOrbit(event.target.value)}><option value="">Choose local Orbit…</option>{localOrbits.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select><button className="button secondary" disabled={!selectedOrbit} onClick={() => void selectSource("orbit")}>Use Orbit</button></div>}
-              </div>
-            </div>}
-            {message.status === "streaming" && <button className="text-button conversation-stop" onClick={() => void cancel(message.id)}><StopCircleIcon /> Stop</button>}
-          </div>
-        </motion.article>) : <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="maintenance-chat-empty"><RobotIcon weight="duotone" /><h3>Ask Maintenance RaDio</h3><p>Status and reports need no repository. Source access is requested only when code work begins.</p><div>{starters.map((starter) => <button key={starter} onClick={() => { setBody(starter); setPromptImproved(false); }}>{starter}</button>)}</div></motion.div>}</AnimatePresence></div>
+  return <div className={`neural-console theme-${theme}`}>
+    <header className="neural-topbar">
+      <Brand />
+      <div className="neural-state"><i /><span><small>RaDio state</small><strong>{state?.automation.status ?? "Starting"}</strong></span><span><small>Next cycle</small><strong>{nextCycle}</strong></span></div>
+      <div className="version-chip"><small>Installed / source</small><strong>{install.currentVersion ?? "dev"} / 0.11.0</strong></div>
+      <div className="neural-top-actions"><button className="button secondary" onClick={onReturn}><ArrowLeftIcon /> All projects</button><button className="icon-control" aria-label={state?.automation.paused ? "Resume automation" : "Pause automation"} title={state?.automation.paused ? "Resume automation" : "Pause automation"} onClick={() => void control(state?.automation.paused ? "resume" : "pause")}>{state?.automation.paused ? <PlayIcon /> : <PauseIcon />}</button><button className="icon-control danger" aria-label="Emergency stop" title="Emergency stop" onClick={() => void control("emergency-stop")}><StopCircleIcon /></button></div>
+    </header>
+
+    <main className="neural-stage">
+      <div className="neural-heading"><span className="eyebrow">Application-level autonomous core</span><h1>Neural Console</h1><p>{activeGoal ? activeGoal.currentAction : state?.automation.idleStatus ?? "Initializing local inspection"}</p></div>
+      <NeuralBrain state={state} theme={theme} />
+      <nav className="radial-controls" aria-label="RaDio console sections">{panels.map(({ id, label, icon: Icon }, index) => <motion.button key={id} style={{ "--slot": index } as CSSProperties} className={panel === id ? `radial-${id} active` : `radial-${id}`} whileHover={{ scale: 1.06 }} whileTap={{ scale: .96 }} onClick={() => void choosePanel(panel === id ? undefined : id)} aria-label={`Open ${label}`} aria-expanded={panel === id} title={label}><Icon weight="duotone" /><span>{label}</span></motion.button>)}</nav>
+      <AnimatePresence mode="wait">{panel && <motion.section key={panel} className={`radial-card card-${panel}`} initial={{ opacity: 0, scale: .94, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }} transition={{ type: "spring", stiffness: 310, damping: 28 }}>
+        <header><span>{panels.find((item) => item.id === panel)?.label}</span><button aria-label="Close panel" onClick={() => void choosePanel(undefined)}><XIcon /></button></header>
+        <div className="radial-card-body">
+          {panel === "goals" && <>{state?.goals.length ? state.goals.map((goal) => <article className="console-row" key={goal.id}><span><strong>{goal.title}</strong><small>P{goal.priority} · {goal.assignedStar} · {goal.status}</small><p>{goal.currentAction}</p></span><div>{goal.status === "blocked" && <button onClick={() => void goalAction(goal.id, "retry")}>Retry</button>}<button onClick={() => void goalAction(goal.id, "prioritize")}>Prioritize</button></div></article>) : <Empty label="No goals queued" />}</>}
+          {panel === "activity" && <>{activeGoal ? <article className="activity-focus"><ActivityIcon /><span><small>Active Star · {activeGoal.assignedStar}</small><strong>{activeGoal.title}</strong><p>{activeGoal.currentAction}</p><b>{activeGoal.attempts}/3 attempts</b></span></article> : <Empty label="No active execution" />}{state?.chat.messages.slice(-5).reverse().map((message) => <article className="console-row" key={message.id}><span><strong>{message.author === "radio" ? "RaDio response" : "Owner prompt"}</strong><small>{message.status} · {new Date(message.createdAt).toLocaleTimeString()}</small></span></article>)}</>}
+          {panel === "findings" && <>{state?.findings.length ? state.findings.map((finding) => <article className={`console-row severity-${finding.severity}`} key={finding.id}><WarningIcon /><span><strong>{finding.title}</strong><small>{finding.category} · {finding.severity}</small><p>{finding.detail}</p></span></article>) : <Empty label="No internal findings" />}</>}
+          {panel === "staging" && <>{state?.goals.filter((goal) => goal.branch || goal.staging).length ? state.goals.filter((goal) => goal.branch || goal.staging).map((goal) => <article className="console-row" key={goal.id}><GitBranchIcon /><span><strong>{goal.branch ?? "Awaiting isolated branch"}</strong><small>{goal.staging?.status ?? goal.status}</small><p>{goal.staging?.detail ?? goal.currentAction}</p>{goal.commit && <code>{goal.commit.slice(0, 12)}</code>}</span></article>) : <Empty label="No staging promotions yet" />}</>}
+          {panel === "automation" && <div className="automation-grid"><Metric label="Startup cycle" value={state?.automation.startupInspection ? "Enabled" : "Disabled"} /><Metric label="Schedule" value={`Every ${state?.automation.intervalMinutes ?? 30} min`} /><Metric label="Daily features" value={`${state?.automation.dailyFeatureLimit ?? 1} maximum`} /><Metric label="Source binding" value={state?.source ? state.source.repository : "Required"} /><Metric label="Provider" value={readiness.ready ? `${state?.provider} ready` : "Unavailable"} /><button className="button primary" disabled={!state?.source || state.automation.cycleRunning} onClick={() => void control("run")}><PlayIcon /> Run inspection now</button></div>}
+        </div>
+      </motion.section>}</AnimatePresence>
+    </main>
+
+    <motion.section className={chatOpen ? "neural-chat open" : "neural-chat"} layout>
+      {!chatOpen ? <button className="prompt-launcher" onClick={() => { setChatOpen(true); window.setTimeout(() => promptRef.current?.focus(), 120); }}><BrainIcon weight="duotone" /><span>Ask RaDio about Asteria maintenance…</span><kbd>⌘ K</kbd></button> : <>
+        <header><div><RobotIcon weight="duotone" /><span><strong>Maintenance conversations</strong><small>Application scope · encrypted locally</small></span></div><select aria-label="Current conversation"><option>Current thread</option></select><button className="button secondary" onClick={() => setBody("")}>New conversation</button><button className="icon-control" aria-label="Collapse conversation" onClick={() => setChatOpen(false)}><XIcon /></button></header>
+        <div className="neural-messages" ref={messagesRef} onScroll={handleMessagesScroll}>{state?.chat.messages.map((message) => <article key={message.id} className={message.author}><span>{message.author === "radio" ? <RobotIcon /> : "You"}</span><div><header><strong>{message.author === "radio" ? "RaDio" : "You"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MaintenanceMarkdown content={message.body} fallbackLabel="Showing plain response" />}{message.status === "streaming" && <><ResponseActivity hasContent={Boolean(message.body)} /><button className="text-button" onClick={() => state && void window.asteria?.maintenance.cancel({ expectedVersion: state.version, idempotencyKey: `cancel_${crypto.randomUUID()}`, messageId: message.id })}><StopCircleIcon /> Stop</button></>}{message.status === "waiting_for_source" && <div className="source-required-card"><FolderOpenIcon /><div><strong>Asteria source required</strong><p>Changes run only in an isolated internal worktree.</p><button className="button primary" onClick={() => void selectSource("folder")}>Choose Asteria repository</button>{localOrbits.length > 0 && <div className="source-orbit-row"><select value={selectedOrbit} onChange={(event) => setSelectedOrbit(event.target.value)}><option value="">Choose local Orbit…</option>{localOrbits.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><button disabled={!selectedOrbit} onClick={() => void selectSource("orbit")}>Use Orbit</button></div>}</div></div>}</div></article>)}</div>
         {error && <p className="radio-send-error" role="alert">{error}</p>}
-        {!readiness.ready && <div className="radio-readiness"><strong>{readiness.loading ? "Checking RaDio prerequisites…" : "Maintenance RaDio is not ready yet"}</strong>{readiness.checks.map((check) => <p className={check.ready ? "ready" : ""} key={check.label}><b>{check.ready ? "Ready" : "Required"}</b><span>{check.label}<small>{check.detail}</small></span></p>)}<button className="button secondary" onClick={() => void readiness.refresh()}>Check again</button></div>}
-        <footer className="maintenance-composer">
-          <div className="maintenance-composer-input"><textarea aria-label="Message Maintenance RaDio" disabled={!readiness.ready} value={body} onChange={(event) => { setBody(event.target.value); setPromptImproved(false); }} placeholder={readiness.ready ? "Ask about Asteria health, reports, or maintenance…" : "Complete RaDio setup before chatting"} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} /><span><LightbulbIcon /> {body.trim() ? `${body.trim().split(/\s+/).length} words · Enter to send · Shift + Enter for a new line` : "Describe the outcome; RaDio will inspect before acting."}</span></div>
-          <div className="maintenance-composer-actions"><button className={`maintenance-improve-button${promptImproved ? " improved" : ""}`} aria-label={promptImproved ? "Prompt improved" : "Improve prompt"} title={promptImproved ? "Prompt improved" : "Improve prompt locally"} disabled={!body.trim() || !readiness.ready} onClick={() => { setBody(improveMaintenancePrompt(body)); setPromptImproved(true); }}>{promptImproved ? <CheckCircleIcon weight="fill" /> : <MagicWandIcon weight="fill" />}</button><motion.button whileHover={{ scale: 1.06 }} whileTap={{ scale: .94 }} aria-label="Send to Maintenance RaDio" disabled={!body.trim() || !readiness.ready || isStreaming} onClick={() => void send()}><ArrowUpIcon weight="bold" /></motion.button></div>
-        </footer>
-      </section>
-      <section className="maintenance-feed">
-        <header><div><span className="eyebrow">Health queue</span><h2>Maintenance reports</h2></div><span className={incidents.length ? "warning" : "success"}>{incidents.length ? "Needs review" : "All clear"}</span></header>
-        {incidents.length ? incidents.map(({ project, incident }) => <button key={incident.id} onClick={() => onOpenProject(project.id)}><WarningIcon /><span><strong>{incident.title}</strong><small>{project.name} · {incident.owner} Star · {incident.status}</small><p>{incident.detail}</p></span><b>Open Orbit</b></button>) : <div className="maintenance-empty"><CheckCircleIcon weight="duotone" /><h3>No unresolved incidents</h3><p>RaDio is monitoring renderer, Electron, storage, provider, build, installation, and startup health.</p></div>}
-      </section>
-    </div>
+        <footer><textarea ref={promptRef} aria-label="Maintenance prompt" value={body} onChange={(event) => setBody(event.target.value)} placeholder={readiness.ready ? "Ask, diagnose, or create a durable maintenance goal…" : "Provider unavailable; local inspection remains available"} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button className="icon-control improve" aria-label="Improve prompt" title="Improve prompt locally" onClick={() => setBody(improveMaintenancePrompt(body))}><MagicWandIcon /></button><button className="send-control" aria-label="Send prompt" disabled={!body.trim() || !readiness.ready || isStreaming} onClick={() => void send()}><ArrowUpIcon /></button></footer>
+      </>}
+    </motion.section>
   </div>;
 }
+
+function Empty({ label }: { label: string }) { return <div className="console-empty"><CheckCircleIcon weight="duotone" /><span>{label}</span></div>; }
+function Metric({ label, value }: { label: string; value: string }) { return <article><small>{label}</small><strong>{value}</strong></article>; }
