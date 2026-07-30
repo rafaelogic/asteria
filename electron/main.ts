@@ -235,6 +235,20 @@ app.whenReady().then(async () => {
       const completed = resumed.goals.find((goal) => goal.install?.status === "healthy" && goal.worktreePath);
       if (completed?.worktreePath && resumed.source?.path) void cleanupTaskWorktree(resumed.source.path, completed.worktreePath, completed.branch);
     }
+    const maintenanceWithInstall = store.maintenance.get();
+    if (maintenanceWithInstall.source) {
+      try {
+        const validated = await validateAsteriaSource(maintenanceWithInstall.source.path);
+        if (maintenanceWithInstall.source.version !== validated.version) {
+          store.maintenance.save({
+            ...maintenanceWithInstall,
+            source: { ...maintenanceWithInstall.source, ...validated, validatedAt: new Date().toISOString() },
+          }, maintenanceWithInstall.version, `maintenance_source_refresh_${validated.version}`);
+        }
+      } catch {
+        // Keep the binding visible so the owner can repair or replace it.
+      }
+    }
     process.env.ASTERIA_NETWORK_PROXY = await networkProxy.listen();
     networkProxy.on("decision", (decision) => {
       networkRequests.unshift({ id: randomUUID(), process: "provider-session", protocol: new URL(decision.url).protocol, ...decision });
@@ -442,9 +456,10 @@ async function validateAsteriaSource(repositoryPath: string) {
   if (!existsSync(manifestPath) || !existsSync(path.join(repositoryPath, "electron", "main.ts")) || !existsSync(path.join(repositoryPath, "src"))) {
     throw new Error("Choose the Asteria source repository containing package.json, electron/main.ts, and src/.");
   }
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { name?: string };
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { name?: string; version?: string };
   if (manifest.name !== "asteria") throw new Error("The selected Git repository is not an Asteria source repository.");
-  return { path: repositoryPath, repository: path.basename(repositoryPath) };
+  if (!manifest.version) throw new Error("The selected Asteria source repository does not declare a version.");
+  return { path: repositoryPath, repository: path.basename(repositoryPath), version: manifest.version };
 }
 
 function previewEvidenceSummary(evidence: PreviewEvidence) {

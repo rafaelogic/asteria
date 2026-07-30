@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { maintenanceRequiresPreview, maintenanceRequiresSource, maintenanceUsesHostPreview } from "../electron/radio/supervisor";
 import { MaintenanceSendSchema, MaintenanceSourceSchema } from "../electron/contracts";
 import { improveMaintenancePrompt } from "../src/screens/MaintenanceRadioScreen";
 
 describe("Maintenance RaDio context", () => {
+  it("renders the validated source version instead of a hardcoded release", () => {
+    const screen = readFileSync("src/screens/MaintenanceRadioScreen.tsx", "utf8");
+    expect(screen).toContain('state?.source?.version ?? "not selected"');
+    expect(screen).not.toContain("/ 0.11.3");
+  });
   it("routes visual verification through the trusted host preview", () => {
     for (const request of ["verify the visual preview", "check the UI layout", "take a browser screenshot"]) {
       expect(maintenanceRequiresPreview(request)).toBe(true);

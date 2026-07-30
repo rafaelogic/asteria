@@ -242,6 +242,7 @@ export interface RaDioChat { id: string; projectId: string; runId: string; archi
 export interface ApplicationSourceBinding {
   path: string;
   repository: string;
+  version?: string;
   source: "folder" | "orbit";
   projectId?: string;
   validatedAt: string;
