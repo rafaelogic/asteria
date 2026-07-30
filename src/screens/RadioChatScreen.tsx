@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowUpIcon, BrainIcon, CheckCircleIcon, FileIcon, PaperclipIcon, PauseIcon, PulseIcon, RobotIcon, StopCircleIcon, WarningIcon, WrenchIcon, XIcon } from "@phosphor-icons/react";
 import { MarkdownPreview } from "../components/RichPreview";
 import type { Project, RaDioChatAttachment, UserInstallState } from "../types";
 import { useRadioReadiness } from "../hooks/useRadioReadiness";
 import { ResponseActivity } from "../components/ResponseActivity";
+import { useConversationAutoScroll } from "../hooks/useConversationAutoScroll";
 
 const suggestions = ["What is the current health of this Orbit?", "Activate the right Star for open incidents", "Run the relevant checks", "Explain the latest Waypoint"];
 
@@ -17,15 +18,12 @@ export function RadioChatScreen({ project, onProject }: { project: Project; onPr
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState("");
   const [install, setInstall] = useState<UserInstallState>({ rollbackReady: false });
-  const messagesRef = useRef<HTMLDivElement>(null);
+  const { messagesRef, handleMessagesScroll, resumeAutoScroll } = useConversationAutoScroll(selected?.messages);
   const readiness = useRadioReadiness(project.provider, project);
   const base = { projectId: project.id, runId: project.runId, expectedVersion: project.version };
   const openIncidents = useMemo(() => project.incidents.filter((item) => item.status !== "resolved"), [project.incidents]);
   useEffect(() => { void window.asteria?.installer.state().then(setInstall); }, [project.id]);
-  useEffect(() => {
-    const messages = messagesRef.current;
-    if (messages) messages.scrollTop = messages.scrollHeight;
-  }, [selected?.messages]);
+  useEffect(() => { resumeAutoScroll(); }, [selected?.id]);
 
   const attach = async () => {
     const selectedFiles = await window.asteria?.radioChat.selectAttachments(project.id);
@@ -33,6 +31,7 @@ export function RadioChatScreen({ project, onProject }: { project: Project; onPr
   };
   const send = async (value = body) => {
     if (!value.trim() || !window.asteria || selected?.archived || !readiness.ready) return;
+    resumeAutoScroll();
     setBusy(true);
     setSendError("");
     try {
@@ -68,7 +67,7 @@ export function RadioChatScreen({ project, onProject }: { project: Project; onPr
         {openIncidents.length > 0 && <section><span className="eyebrow">Open incidents</span>{openIncidents.slice(0, 4).map((incident) => <div key={incident.id}><WarningIcon /><span><strong>{incident.title}</strong><small>{incident.owner} · {incident.status}</small></span></div>)}</section>}
       </aside>
       <section className="radio-conversation">
-        <div className="radio-messages" ref={messagesRef}>{selected?.messages.length ? selected.messages.map((message) => <article key={message.id} className={`radio-message ${message.author}`}>
+        <div className="radio-messages" ref={messagesRef} onScroll={handleMessagesScroll}>{selected?.messages.length ? selected.messages.map((message) => <article key={message.id} className={`radio-message ${message.author}`}>
           <span className="radio-message-avatar">{message.author === "radio" ? <RobotIcon weight="duotone" /> : "You"}</span>
           <div><header><strong>{message.author === "radio" ? "RaDio" : "Project owner"}</strong><time>{new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>{message.status === "streaming" && <i className="streaming-dot" />}</header>
             {message.body && <MarkdownPreview content={message.body} />}

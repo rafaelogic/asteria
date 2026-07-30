@@ -1,10 +1,11 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { ArrowUpIcon, CheckCircleIcon, FolderOpenIcon, HardDrivesIcon, LightbulbIcon, MagicWandIcon, PulseIcon, RobotIcon, StopCircleIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { SafeMarkdownPreview } from "../components/RichPreview";
 import type { ApplicationMaintenanceSettings, Project, UserInstallState } from "../types";
 import { useRadioReadiness } from "../hooks/useRadioReadiness";
 import { ResponseActivity } from "../components/ResponseActivity";
+import { useConversationAutoScroll } from "../hooks/useConversationAutoScroll";
 
 const MaintenanceMarkdown = memo(SafeMarkdownPreview);
 
@@ -28,7 +29,7 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
   const [selectedOrbit, setSelectedOrbit] = useState("");
   const [error, setError] = useState("");
   const [promptImproved, setPromptImproved] = useState(false);
-  const messagesRef = useRef<HTMLDivElement>(null);
+  const { messagesRef, handleMessagesScroll, resumeAutoScroll } = useConversationAutoScroll(state?.chat.messages);
   const readiness = useRadioReadiness(state?.provider ?? "codex");
   const localOrbits = projects.filter((project) => project.repositoryPath);
   useEffect(() => {
@@ -40,10 +41,6 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
     const timer = window.setInterval(() => void window.asteria?.maintenance.state().then(setState), 800);
     return () => window.clearInterval(timer);
   }, [state?.chat.messages]);
-  useEffect(() => {
-    const messages = messagesRef.current;
-    if (messages) messages.scrollTop = messages.scrollHeight;
-  }, [state?.chat.messages]);
   const incidents = useMemo(() => projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved").map((incident) => ({ project, incident }))), [projects]);
   const observations = useMemo(() => projects.reduce((total, project) => total + project.artifacts.length, 0), [projects]);
   const pending = state?.pendingOperation;
@@ -54,6 +51,7 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
 
   const send = async () => {
     if (!window.asteria || !state || !body.trim() || !readiness.ready) return;
+    resumeAutoScroll();
     const submittedBody = body;
     setError("");
     try {
@@ -88,7 +86,7 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
     <div className="maintenance-layout">
       <section className="maintenance-chat">
         <header><span><strong>Application conversation</strong><small>{observations} encrypted Observations available</small></span><b>{state?.provider ?? "codex"}</b></header>
-        <div className="maintenance-messages" ref={messagesRef}><AnimatePresence initial={false}>{state?.chat.messages.length ? state.chat.messages.map((message) => <motion.article initial={{ opacity: 0, y: 10, scale: .99 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: .24 }} key={message.id} className={message.author}>
+        <div className="maintenance-messages" ref={messagesRef} onScroll={handleMessagesScroll}><AnimatePresence initial={false}>{state?.chat.messages.length ? state.chat.messages.map((message) => <motion.article initial={{ opacity: 0, y: 10, scale: .99 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: .24 }} key={message.id} className={message.author}>
           <span>{message.author === "radio" ? <RobotIcon weight="duotone" /> : "You"}</span>
           <div><header><strong>{message.author === "radio" ? "Maintenance RaDio" : "Rafael"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MaintenanceMarkdown content={message.body} fallbackLabel="Report preview unavailable — showing source text" />}
             {message.status === "streaming" && <ResponseActivity hasContent={Boolean(message.body)} />}
