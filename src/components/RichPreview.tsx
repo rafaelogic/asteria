@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { codeToHtml } from "shiki";
@@ -28,4 +28,32 @@ export function MarkdownPreview({ content }: { content: string }) {
     a: ({ href, children }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={href} target="_blank" rel="noreferrer">{children}</a>
   }), []);
   return <article className="markdown-preview"><ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{content}</ReactMarkdown></article>;
+}
+
+interface SafeMarkdownPreviewState { failed: boolean }
+
+export class SafeMarkdownPreview extends Component<{ content: string; fallbackLabel?: string }, SafeMarkdownPreviewState> {
+  state: SafeMarkdownPreviewState = { failed: false };
+
+  static getDerivedStateFromError(): SafeMarkdownPreviewState {
+    return { failed: true };
+  }
+
+  componentDidCatch(_error: Error, _info: ErrorInfo) {
+    // The source text remains available below; renderer health reporting owns diagnostics.
+  }
+
+  componentDidUpdate(previous: Readonly<{ content: string }>) {
+    if (this.state.failed && previous.content !== this.props.content) this.setState({ failed: false });
+  }
+
+  render(): ReactNode {
+    if (this.state.failed) {
+      return <div className="markdown-preview markdown-preview-fallback" role="status">
+        <strong>{this.props.fallbackLabel ?? "Rich preview unavailable"}</strong>
+        <pre>{this.props.content}</pre>
+      </div>;
+    }
+    return <MarkdownPreview content={this.props.content} />;
+  }
 }

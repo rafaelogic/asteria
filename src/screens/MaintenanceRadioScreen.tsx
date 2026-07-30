@@ -1,12 +1,12 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpIcon, CheckCircleIcon, FolderOpenIcon, HardDrivesIcon, LightbulbIcon, MagicWandIcon, PulseIcon, RobotIcon, StopCircleIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
-import { MarkdownPreview } from "../components/RichPreview";
+import { SafeMarkdownPreview } from "../components/RichPreview";
 import type { ApplicationMaintenanceSettings, Project, UserInstallState } from "../types";
 import { useRadioReadiness } from "../hooks/useRadioReadiness";
 import { ResponseActivity } from "../components/ResponseActivity";
 
-const MaintenanceMarkdown = memo(MarkdownPreview);
+const MaintenanceMarkdown = memo(SafeMarkdownPreview);
 
 export function improveMaintenancePrompt(value: string) {
   const clean = value.trim().replace(/\s+/g, " ");
@@ -90,7 +90,7 @@ export function MaintenanceRadioScreen({ projects, onOpenProject }: { projects: 
         <header><span><strong>Application conversation</strong><small>{observations} encrypted Observations available</small></span><b>{state?.provider ?? "codex"}</b></header>
         <div className="maintenance-messages" ref={messagesRef}><AnimatePresence initial={false}>{state?.chat.messages.length ? state.chat.messages.map((message) => <motion.article initial={{ opacity: 0, y: 10, scale: .99 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: .24 }} key={message.id} className={message.author}>
           <span>{message.author === "radio" ? <RobotIcon weight="duotone" /> : "You"}</span>
-          <div><header><strong>{message.author === "radio" ? "Maintenance RaDio" : "Rafael"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MaintenanceMarkdown content={message.body} />}
+          <div><header><strong>{message.author === "radio" ? "Maintenance RaDio" : "Rafael"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MaintenanceMarkdown content={message.body} fallbackLabel="Report preview unavailable — showing source text" />}
             {message.status === "streaming" && <ResponseActivity hasContent={Boolean(message.body)} />}
             {message.status === "waiting_for_source" && pending?.operationId === message.operationId && <div className="source-required-card">
               <FolderOpenIcon /><div><strong>Asteria source required</strong><p>Choose a repository only when RaDio begins code analysis. Its path stays out of provider prompts.</p>
