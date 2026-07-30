@@ -48,4 +48,6 @@ RaDio must automatically investigate and fix errors it encounters, then activate
 
 RaDio must commit completed repository changes. It must never push from `main`, `master`, or another non-staging branch. Before publishing changes to GitHub, RaDio must switch to the repository's `staging` branch or create `staging` when it does not exist; `staging` is RaDio's authorized working and publishing branch.
 
+After RaDio verifies and pushes an Asteria change to `staging`, Ascendant may build that exact revision, perform an atomic user-scoped self-install with canary and rollback evidence, relaunch Asteria, resume from a durable Waypoint, and continue the remaining goal queue. It must block instead of continuing when the installed version, staging revision, or health evidence does not match. Before execution, RaDio should shape a testable plan, activate relevant planning, product, and QA specialists, iterate from evidence, and suggest a better workflow when it can explain a safer or more effective sequence.
+
 Every repository change must bump Asteria’s version in both `package.json` and `package-lock.json`. Follow semantic versioning: use a patch bump by default, a minor bump for backward-compatible features, and a major bump for breaking changes.

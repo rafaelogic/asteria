@@ -36,6 +36,7 @@ import { redactSecrets } from "../src/redaction.js";
 import { classifyChatCommand, decideChatCommand, defaultTakeover, maintenanceRequiresSource, maintenanceUsesHostPreview, recordIncident } from "./radio/supervisor.js";
 import { inspectAttachment, revalidateAttachment } from "./radio/attachments.js";
 import { prepareUserCandidate, readUserInstallState } from "./radio/user-installer.js";
+import { reconcileMaintenanceRelaunch } from "./radio/maintenance-update.js";
 import type { ApplicationMaintenanceSettings, DeploymentRun, HealthFinding, NetworkApproval, NetworkRequest, Project, ReleaseEvidence } from "../src/types.js";
 import { RaDioAccountVault } from "./radio/account-vault.js";
 import { RaDioCore } from "./radio/core.js";
@@ -223,6 +224,15 @@ app.whenReady().then(async () => {
     previewManager = new PreviewManager(path.join(app.getPath("userData"), "preview-evidence"), createPreviewWindow);
     configureGitHubStorage(app.getPath("userData"));
     telemetry = new LocalTelemetry(store.telemetry);
+    const maintenanceBeforeResume = store.maintenance.get();
+    const maintenanceAfterResume = reconcileMaintenanceRelaunch(maintenanceBeforeResume, await readUserInstallState());
+    if (maintenanceAfterResume !== maintenanceBeforeResume) {
+      store.maintenance.save(
+        maintenanceAfterResume,
+        maintenanceBeforeResume.version,
+        `maintenance_relaunch_${maintenanceAfterResume.goals.find((goal) => goal.install?.status === "healthy" || goal.install?.status === "blocked")?.id ?? Date.now()}`
+      );
+    }
     process.env.ASTERIA_NETWORK_PROXY = await networkProxy.listen();
     networkProxy.on("decision", (decision) => {
       networkRequests.unshift({ id: randomUUID(), process: "provider-session", protocol: new URL(decision.url).protocol, ...decision });
@@ -303,8 +313,25 @@ async function continueTakeover(projectId: string) {
   let project = store.projects.get(projectId);
   if (!project || project.radio.mode !== "full_autonomous" || !project.takeover.enabled || project.radio.emergencyStopped || project.takeover.phase === "paused") return;
   if (project.runStatus === "completed") {
-    if (project.radio.autoBuild && project.radio.autoInstall && project.takeover.phase !== "installing" && project.repositoryPath) {
+    if (project.radio.autoBuild && project.radio.autoInstall && project.repositoryPath) {
       const installed = await readUserInstallState();
+      if (project.takeover.phase === "installing") {
+        const healthy = installed.currentVersion === app.getVersion()
+          && installed.health?.heartbeat
+          && installed.health.storage
+          && installed.health.providers
+          && installed.health.skills
+          && installed.health.renderer
+          && installed.health.consoleErrors.length === 0;
+        project = store.projects.save({
+          ...project,
+          takeover: healthy
+            ? { ...project.takeover, phase: "monitoring", health: "healthy", installTransactionId: undefined, updatedAt: new Date().toISOString() }
+            : { ...project.takeover, phase: "blocked", health: "blocked", lastError: "The relaunched build did not provide matching healthy installation evidence.", updatedAt: new Date().toISOString() },
+        }, project.version, `takeover_relaunched_${project.takeover.installTransactionId ?? app.getVersion()}`);
+        window?.webContents.send("project:updated", project);
+        return;
+      }
       if (installed.currentVersion === app.getVersion()) return;
       const transactionId = randomUUID();
       const building = store.projects.save({
@@ -472,7 +499,7 @@ async function runMaintenanceInspection(trigger: "startup" | "schedule" | "manua
     }
   }, current.version, `maintenance_cycle_${trigger}_${now.getTime()}`);
   window?.webContents.send("maintenance:updated", updated);
-  if (active?.type === "feature" && active.status === "queued" && updated.source) {
+  if (active?.status === "queued" && updated.source) {
     const responseId = randomUUID();
     const launchedAt = new Date().toISOString();
     const withConversation = store.maintenance.save({
@@ -494,7 +521,10 @@ async function runMaintenanceInspection(trigger: "startup" | "schedule" | "manua
       }
     }, updated.version, `maintenance_feature_launch_${active.id}`);
     window?.webContents.send("maintenance:updated", withConversation);
-    await startMaintenanceProvider(withConversation, responseId, "Inspect only local Asteria evidence, select the single highest-value safe improvement, implement it, add regression coverage, and explain the evidence. Do not perform external research.", active.id);
+    const objective = active.type === "feature"
+      ? "Inspect only local Asteria evidence, select the single highest-value safe improvement, implement it, add regression coverage, and explain the evidence."
+      : `Continue maintenance goal "${active.title}". Diagnose from its recorded evidence, form a testable plan, activate the smallest useful specialist Constellation, implement and iterate, then verify independently.`;
+    await startMaintenanceProvider(withConversation, responseId, `${objective} Challenge the proposed sequence and include a concise workflow improvement when a safer or more effective approach is supported by evidence. Do not perform external research.`, active.id);
     return store.maintenance.get();
   }
   return updated;
@@ -538,14 +568,32 @@ async function finishMaintenanceHostWork(sessionId: string, context: NonNullable
         if (!verified) throw new Error("Provider execution or trusted-host verification did not pass.");
         const saved = await checkpoint(context.worktreePath, `feat: complete internal RaDio goal ${goal.id.slice(0, 8)}`);
         const promotion = await promoteFastForwardToStaging(app.getPath("userData"), "application", context.sourceRepositoryPath, saved.commit);
-        const promoted = store.maintenance.save({
+        let promoted = store.maintenance.save({
           ...current,
-          activeGoalId: current.activeGoalId === goal.id ? undefined : current.activeGoalId,
-          goals: current.goals.map((item) => item.id === goal.id ? { ...item, status: "completed" as const, currentAction: "Checkpoint pushed to origin/staging", commit: saved.commit, staging: { status: "pushed" as const, commit: promotion.commit, remoteCommit: promotion.remoteCommit, detail: "Fast-forwarded and pushed only to origin/staging." }, completedAt: now, updatedAt: now } : item),
-          automation: { ...current.automation, status: "idle", idleStatus: "Reviewing the goal queue" }
+          goals: current.goals.map((item) => item.id === goal.id ? { ...item, status: current.automation.autoInstall ? "installing" as const : "completed" as const, currentAction: current.automation.autoInstall ? "Building the exact promoted staging revision for self-install" : "Checkpoint pushed to origin/staging", commit: saved.commit, staging: { status: "pushed" as const, commit: promotion.commit, remoteCommit: promotion.remoteCommit, detail: "Fast-forwarded and pushed only to origin/staging." }, completedAt: current.automation.autoInstall ? undefined : now, updatedAt: now } : item),
+          activeGoalId: current.automation.autoInstall ? current.activeGoalId : current.activeGoalId === goal.id ? undefined : current.activeGoalId,
+          automation: { ...current.automation, status: current.automation.autoInstall ? "installing" as const : "idle" as const, idleStatus: current.automation.autoInstall ? "Preparing a verified user-scoped self-update" : "Reviewing the goal queue" }
         }, current.version, `maintenance_promoted_${goal.id}_${Date.now()}`);
         notes.push(`Staging evidence: checkpoint ${saved.commit.slice(0, 12)} pushed to origin/staging (${promotion.remoteCommit.slice(0, 12)}).`);
         window?.webContents.send("maintenance:updated", promoted);
+        if (promoted.automation.autoInstall) {
+          const candidate = await prepareUserCandidate(context.worktreePath);
+          if (candidate.manifest.commit !== promotion.commit) throw new Error("Self-install candidate does not match the promoted staging revision.");
+          const relaunchAt = new Date().toISOString();
+          promoted = store.maintenance.save({
+            ...promoted,
+            goals: promoted.goals.map((item) => item.id === goal.id ? { ...item, status: "relaunching" as const, currentAction: "Activating the verified build and preserving a continuation Waypoint", install: { status: "relaunching" as const, version: candidate.manifest.version, commit: candidate.manifest.commit, startedAt: relaunchAt }, updatedAt: relaunchAt } : item),
+            automation: { ...promoted.automation, status: "relaunching" as const },
+          }, promoted.version, `maintenance_relaunching_${goal.id}_${candidate.manifest.commit}`);
+          window?.webContents.send("maintenance:updated", promoted);
+          const child = spawn(process.execPath, [candidate.installerPath, candidate.candidatePath, candidate.manifestPath, "--launch"], {
+            detached: true,
+            stdio: "ignore",
+            env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+          });
+          child.unref();
+          setTimeout(() => app.quit(), 500);
+        }
       } catch (error) {
         const latest = store.maintenance.get();
         const detail = redactSecrets(error instanceof Error ? error.message : "The verified checkpoint could not be promoted.");
@@ -621,7 +669,7 @@ async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, r
   const openIncidents = projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved"));
   const install = await readUserInstallState();
   try {
-    providers.start(state.provider, `${radio.governingPrompt()}\nYou are Maintenance RaDio, isolated from Orbit chats. Discuss only Asteria application health, installation, recovery, incidents, and maintenance reports. Never reveal the source path, credentials, hidden reasoning, raw provider conversations, or unrelated Orbit content. Never start or probe a localhost preview listener from the provider sandbox; only Asteria's trusted host may own preview processes and renderer evidence. Never claim that a provider-sandbox EPERM result is the final validation result: after this session, Asteria's trusted host will run the fixed allowlisted validation checks and append authoritative evidence to this response. ${state.source ? "A validated Asteria source repository is available. You may inspect and edit files only inside that repository when the owner requests code changes; preserve unrelated changes and run proportionate checks." : "No source repository is available; answer from normalized application state only and do not inspect or edit code."}${previewEvidence ? `\nAsteria's trusted host already started and loaded the project preview outside your provider sandbox. Initial evidence: ${previewEvidenceSummary(previewEvidence)} Asteria will reload and capture final host evidence after your run.` : ""}${hostValidation.length ? `\nAfter your work, the trusted host will run these allowlisted checks outside the provider sandbox: ${hostValidation.join(", ")}. Do not attempt to expand or replace this command set.` : ""}\nInstalled version: ${install.currentVersion ?? app.getVersion()}\nRollback ready: ${install.rollbackReady}\nOrbit count: ${projects.length}\nOpen application-relevant incidents: ${openIncidents.length}\nOwner request: ${redactSecrets(body)}`, context, { workspaceWrite: Boolean(state.source) });
+    providers.start(state.provider, `${radio.governingPrompt()}\nYou are Maintenance RaDio, isolated from Orbit chats. Discuss only Asteria application health, installation, recovery, incidents, and maintenance reports. Before editing, shape a testable plan and activate planning, product, implementation, security, or QA Stars only when their expertise materially helps. Iterate from captured evidence, and suggest a better workflow when you can explain why it is safer or more effective than the requested sequence. Never reveal the source path, credentials, hidden reasoning, raw provider conversations, or unrelated Orbit content. Never start or probe a localhost preview listener from the provider sandbox; only Asteria's trusted host may own preview processes and renderer evidence. Never claim that a provider-sandbox EPERM result is the final validation result: after this session, Asteria's trusted host will run the fixed allowlisted validation checks and append authoritative evidence to this response. ${state.source ? "A validated Asteria source repository is available. You may inspect and edit files only inside that repository when the owner requests code changes; preserve unrelated changes and run proportionate checks." : "No source repository is available; answer from normalized application state only and do not inspect or edit code."}${previewEvidence ? `\nAsteria's trusted host already started and loaded the project preview outside your provider sandbox. Initial evidence: ${previewEvidenceSummary(previewEvidence)} Asteria will reload and capture final host evidence after your run.` : ""}${hostValidation.length ? `\nAfter your work, the trusted host will run these allowlisted checks outside the provider sandbox: ${hostValidation.join(", ")}. Do not attempt to expand or replace this command set.` : ""}\nInstalled version: ${install.currentVersion ?? app.getVersion()}\nRollback ready: ${install.rollbackReady}\nOrbit count: ${projects.length}\nOpen application-relevant incidents: ${openIncidents.length}\nOwner request: ${redactSecrets(body)}`, context, { workspaceWrite: Boolean(state.source) });
   } catch (error) {
     if (hostPreview) await previewManager.stop(sessionId);
     sessionContext.delete(sessionId);
@@ -1133,6 +1181,8 @@ ipcMain.handle("maintenance:control", async (_event, raw) => {
   const now = new Date().toISOString();
   const automation = input.action === "pause"
     ? { ...current.automation, paused: true, status: "idle" as const, idleStatus: "Paused by owner" }
+    : input.action === "toggle-auto-install"
+      ? { ...current.automation, autoInstall: !current.automation.autoInstall }
     : input.action === "emergency-stop"
       ? { ...current.automation, paused: true, emergencyStopped: true, cycleRunning: false, status: "failed" as const, idleStatus: "Emergency stopped" }
       : { ...current.automation, enabled: true, paused: false, emergencyStopped: false, idleStatus: "Reviewing the goal queue" };

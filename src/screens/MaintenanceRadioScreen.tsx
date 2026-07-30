@@ -79,7 +79,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
   const localOrbits = projects.filter((project) => project.repositoryPath);
   const isStreaming = state?.chat.messages.some((message) => message.status === "streaming") ?? false;
   const operationalState = state?.automation.status ?? "idle";
-  const isWorking = isStreaming || ["inspecting", "implementing", "verifying", "staging"].includes(operationalState);
+  const isWorking = isStreaming || ["inspecting", "implementing", "verifying", "staging", "installing", "relaunching"].includes(operationalState);
   const latestCard = state?.chat.messages.flatMap((message) => message.cards).at(-1);
   const activityStartedAt = activeGoal?.updatedAt ? new Date(activeGoal.updatedAt).getTime() : clock;
   const elapsedSeconds = Math.max(0, Math.floor((clock - activityStartedAt) / 1000));
@@ -89,7 +89,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
       ? "automation"
       : operationalState === "staging"
         ? "staging"
-        : ["inspecting", "implementing", "verifying"].includes(operationalState) || isStreaming
+        : ["inspecting", "implementing", "verifying", "installing", "relaunching"].includes(operationalState) || isStreaming
           ? "activity"
           : activeGoal?.status === "queued"
             ? "goals"
@@ -125,7 +125,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
       try { setState(await window.asteria.maintenance.selectPanel({ expectedVersion: state.version, idempotencyKey: `panel_${crypto.randomUUID()}`, panel: next })); } catch { /* subscription will reconcile */ }
     }
   };
-  const control = async (action: "run" | "pause" | "resume" | "emergency-stop") => {
+  const control = async (action: "run" | "pause" | "resume" | "emergency-stop" | "toggle-auto-install") => {
     if (!window.asteria || !state) return;
     setError("");
     try { setState(await window.asteria.maintenance.control({ expectedVersion: state.version, idempotencyKey: `automation_${crypto.randomUUID()}`, action })); }
@@ -183,7 +183,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
           {panel === "activity" && <>{activeGoal ? <article className="activity-focus"><ActivityIcon /><span><small>Active Star · {activeGoal.assignedStar}</small><strong>{activeGoal.title}</strong><p>{activeGoal.currentAction}</p><b>{activeGoal.attempts}/3 attempts</b></span></article> : <Empty label="No active execution" />}{state?.chat.messages.slice(-5).reverse().map((message) => <article className="console-row" key={message.id}><span><strong>{message.author === "radio" ? "RaDio response" : "Owner prompt"}</strong><small>{message.status} · {new Date(message.createdAt).toLocaleTimeString()}</small></span></article>)}</>}
           {panel === "findings" && <>{state?.findings.length ? state.findings.map((finding) => <article className={`console-row severity-${finding.severity}`} key={finding.id}><WarningIcon /><span><strong>{finding.title}</strong><small>{finding.category} · {finding.severity}</small><p>{finding.detail}</p></span></article>) : <Empty label="No internal findings" />}</>}
           {panel === "staging" && <>{state?.goals.filter((goal) => goal.branch || goal.staging).length ? state.goals.filter((goal) => goal.branch || goal.staging).map((goal) => <article className="console-row" key={goal.id}><GitBranchIcon /><span><strong>{goal.branch ?? "Awaiting isolated branch"}</strong><small>{goal.staging?.status ?? goal.status}</small><p>{goal.staging?.detail ?? goal.currentAction}</p>{goal.commit && <code>{goal.commit.slice(0, 12)}</code>}</span></article>) : <Empty label="No staging promotions yet" />}</>}
-          {panel === "automation" && <div className="automation-grid"><Metric label="Startup cycle" value={state?.automation.startupInspection ? "Enabled" : "Disabled"} /><Metric label="Schedule" value={`Every ${state?.automation.intervalMinutes ?? 30} min`} /><Metric label="Daily features" value={`${state?.automation.dailyFeatureLimit ?? 1} maximum`} /><Metric label="Source binding" value={state?.source ? state.source.repository : "Required"} /><Metric label="Provider" value={readiness.ready ? `${state?.provider} ready` : "Unavailable"} /><button className="button primary" disabled={!state?.source || state.automation.cycleRunning} onClick={() => void control("run")}><PlayIcon /> Run inspection now</button></div>}
+          {panel === "automation" && <div className="automation-grid"><Metric label="Startup cycle" value={state?.automation.startupInspection ? "Enabled" : "Disabled"} /><Metric label="Schedule" value={`Every ${state?.automation.intervalMinutes ?? 30} min`} /><Metric label="Daily features" value={`${state?.automation.dailyFeatureLimit ?? 1} maximum`} /><Metric label="Self-install" value={state?.automation.autoInstall ? "Verified staging revisions" : "Disabled"} /><Metric label="Source binding" value={state?.source ? state.source.repository : "Required"} /><Metric label="Provider" value={readiness.ready ? `${state?.provider} ready` : "Unavailable"} /><button className="button secondary" onClick={() => void control("toggle-auto-install")}>{state?.automation.autoInstall ? "Disable self-install" : "Enable self-install"}</button><button className="button primary" disabled={!state?.source || state.automation.cycleRunning} onClick={() => void control("run")}><PlayIcon /> Run inspection now</button></div>}
         </div>
       </motion.section>}</AnimatePresence>
     </main>

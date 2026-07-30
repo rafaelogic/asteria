@@ -159,7 +159,7 @@ export const MaintenanceSourceSchema = MaintenanceMutationSchema.extend({
   source: z.enum(["folder", "orbit"]),
   projectId: z.string().min(4).max(80).optional()
 });
-export const MaintenanceControlSchema = MaintenanceMutationSchema.extend({ action: z.enum(["run", "pause", "resume", "emergency-stop"]) });
+export const MaintenanceControlSchema = MaintenanceMutationSchema.extend({ action: z.enum(["run", "pause", "resume", "emergency-stop", "toggle-auto-install"]) });
 export const MaintenanceGoalSchema = MaintenanceMutationSchema.extend({ goalId: z.string().uuid(), action: z.enum(["cancel", "retry", "prioritize"]) });
 export const MaintenancePanelSchema = MaintenanceMutationSchema.extend({ panel: z.enum(["goals", "activity", "findings", "staging", "automation"]).optional() });
 export const HealthSignalSchema = z.object({

@@ -18,13 +18,14 @@ export function installStatePath() {
 export async function readUserInstallState(): Promise<UserInstallState> {
   try {
     const value = JSON.parse(await readFile(installStatePath(), "utf8"));
-    return { currentVersion: value.currentVersion, previousVersion: value.previousVersion, currentPath: value.currentPath, previousPath: value.previousPath, transaction: value.transaction, rollbackReady: Boolean(value.rollbackReady) };
+    return { currentVersion: value.currentVersion, previousVersion: value.previousVersion, currentPath: value.currentPath, previousPath: value.previousPath, transaction: value.transaction, manifest: value.manifest, health: value.health, rollbackReady: Boolean(value.rollbackReady) };
   } catch { return { rollbackReady: false }; }
 }
 export async function prepareUserCandidate(repositoryPath: string) {
   const root = path.resolve(repositoryPath);
   if (!existsSync(path.join(root, "package.json")) || !existsSync(path.join(root, "electron", "main.ts"))) throw new Error("User installation is available only for an Asteria source Orbit.");
   const run = async (command: string, args: string[], timeout = 30 * 60_000) => execute(command, args, { cwd: root, timeout, maxBuffer: 20 * 1024 * 1024, env: { ...process.env, ELECTRON_RUN_AS_NODE: "" } });
+  await run("npm", ["ci", "--prefer-offline", "--no-audit"]);
   await run("npm", ["run", "typecheck"]);
   await run("npm", ["run", "build"]);
   await run("npm", ["test"]);
@@ -35,5 +36,7 @@ export async function prepareUserCandidate(repositoryPath: string) {
   await run("npm", ["audit", "--omit=dev", "--offline"]);
   await run(path.join(root, "node_modules", ".bin", "electron-builder"), ["--linux", "dir", "--publish", "never"]);
   await run("node", ["scripts/prepare-user-release.mjs"]);
-  return { candidatePath: path.join(root, "dist", "linux-unpacked"), manifestPath: path.join(root, "dist", "user-release.json"), installerPath: path.join(root, "scripts", "install-user-release.mjs") };
+  const manifestPath = path.join(root, "dist", "user-release.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { version: string; commit: string };
+  return { candidatePath: path.join(root, "dist", "linux-unpacked"), manifestPath, installerPath: path.join(root, "scripts", "install-user-release.mjs"), manifest };
 }

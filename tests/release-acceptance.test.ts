@@ -49,6 +49,11 @@ describe("release acceptance gates", () => {
     expect(installer).toContain("hardenPrivateTree(releaseStateRoot)");
     expect(installer).toContain("stat.isSymbolicLink()");
   });
+  it("bootstraps exact-revision dependencies before self-install verification", () => {
+    const installer = readFileSync("electron/radio/user-installer.ts", "utf8");
+    expect(installer).toContain('await run("npm", ["ci", "--prefer-offline", "--no-audit"])');
+    expect(installer.indexOf('await run("npm", ["ci"')).toBeLessThan(installer.indexOf('await run("npm", ["run", "typecheck"])'));
+  });
   it("collects complete dependency trees without shell execution during packaging", () => {
     const patcher = readFileSync("scripts/patch-electron-builder.mjs", "utf8");
     expect(patcher).toContain("execFileSync");

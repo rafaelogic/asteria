@@ -225,7 +225,7 @@ export interface ReleaseManifest { schemaVersion: 1; version: string; commit: st
 export interface CandidateHealthCheck { storage: boolean; providers: boolean; skills: boolean; renderer: boolean; consoleErrors: string[]; heartbeat: boolean; checkedAt: string }
 export interface RollbackSnapshot { id: string; version: string; path: string; databaseIncluded: boolean; createdAt: string }
 export interface InstallTransaction { id: string; projectId: string; runId: string; version: string; status: "preparing" | "canary" | "activating" | "healthy" | "rolling_back" | "rolled_back" | "failed"; candidatePath: string; previousPath?: string; manifest: ReleaseManifest; health?: CandidateHealthCheck; rollback?: RollbackSnapshot; startedAt: string; completedAt?: string; detail: string }
-export interface UserInstallState { currentVersion?: string; previousVersion?: string; currentPath?: string; previousPath?: string; transaction?: InstallTransaction; rollbackReady: boolean }
+export interface UserInstallState { currentVersion?: string; previousVersion?: string; currentPath?: string; previousPath?: string; transaction?: InstallTransaction; manifest?: ReleaseManifest; health?: CandidateHealthCheck; rollbackReady: boolean }
 
 export interface RaDioChatReference { kind: "coordinate" | "incident" | "task" | "file" | "commit" | "observation" | "star"; id: string; label: string }
 export interface RaDioChatAttachment { id: string; name: string; path: string; mime: string; size: number; modifiedAt: string; digest: string; status: "ready" | "stale" | "missing" | "rejected" }
@@ -265,7 +265,7 @@ export interface MaintenanceChat {
   updatedAt: string;
 }
 export type MaintenancePanel = "goals" | "activity" | "findings" | "staging" | "automation";
-export type MaintenanceGoalStatus = "queued" | "inspecting" | "implementing" | "verifying" | "staging" | "completed" | "blocked" | "failed" | "cancelled";
+export type MaintenanceGoalStatus = "queued" | "inspecting" | "implementing" | "verifying" | "staging" | "installing" | "relaunching" | "completed" | "blocked" | "failed" | "cancelled";
 export interface MaintenanceGoal {
   id: string;
   type: "health" | "recovery" | "feature" | "owner";
@@ -283,6 +283,7 @@ export interface MaintenanceGoal {
   branch?: string;
   commit?: string;
   staging?: { status: "waiting" | "integrated" | "pushed" | "blocked"; commit?: string; remoteCommit?: string; detail: string };
+  install?: { status: "building" | "relaunching" | "healthy" | "blocked"; version: string; commit: string; startedAt: string; completedAt?: string };
   blocker?: string;
   createdAt: string;
   updatedAt: string;
@@ -300,6 +301,7 @@ export interface MaintenanceFinding {
 }
 export interface MaintenanceAutomation {
   enabled: boolean;
+  autoInstall: boolean;
   paused: boolean;
   emergencyStopped: boolean;
   startupInspection: boolean;
@@ -309,7 +311,7 @@ export interface MaintenanceAutomation {
   nextCycleAt?: string;
   lastFeatureDate?: string;
   cycleRunning: boolean;
-  status: "idle" | "inspecting" | "implementing" | "verifying" | "staging" | "blocked" | "failed";
+  status: "idle" | "inspecting" | "implementing" | "verifying" | "staging" | "installing" | "relaunching" | "blocked" | "failed";
   idleStatus: string;
 }
 export interface ApplicationMaintenanceSettings {
@@ -688,7 +690,7 @@ export interface AsteriaApi {
     cancel(input: { expectedVersion: number; idempotencyKey: string; messageId: string }): Promise<ApplicationMaintenanceSettings>;
     selectSource(input: { expectedVersion: number; idempotencyKey: string; operationId: string; source: "folder" | "orbit"; projectId?: string }): Promise<ApplicationMaintenanceSettings>;
     disconnectSource(input: { expectedVersion: number; idempotencyKey: string }): Promise<ApplicationMaintenanceSettings>;
-    control(input: { expectedVersion: number; idempotencyKey: string; action: "run" | "pause" | "resume" | "emergency-stop" }): Promise<ApplicationMaintenanceSettings>;
+    control(input: { expectedVersion: number; idempotencyKey: string; action: "run" | "pause" | "resume" | "emergency-stop" | "toggle-auto-install" }): Promise<ApplicationMaintenanceSettings>;
     goal(input: { expectedVersion: number; idempotencyKey: string; goalId: string; action: "cancel" | "retry" | "prioritize" }): Promise<ApplicationMaintenanceSettings>;
     selectPanel(input: { expectedVersion: number; idempotencyKey: string; panel?: MaintenancePanel }): Promise<ApplicationMaintenanceSettings>;
     subscribe(callback: (state: ApplicationMaintenanceSettings) => void): () => void;
