@@ -60,12 +60,18 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
   const [body, setBody] = useState("");
   const [selectedOrbit, setSelectedOrbit] = useState("");
   const [error, setError] = useState("");
+  const [clock, setClock] = useState(Date.now());
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const { messagesRef, handleMessagesScroll, resumeAutoScroll } = useConversationAutoScroll(state?.chat.messages);
   const readiness = useRadioReadiness(state?.provider ?? "codex");
   const activeGoal = state?.goals.find((goal) => goal.id === state.activeGoalId);
   const localOrbits = projects.filter((project) => project.repositoryPath);
   const isStreaming = state?.chat.messages.some((message) => message.status === "streaming") ?? false;
+  const operationalState = state?.automation.status ?? "idle";
+  const isWorking = isStreaming || ["inspecting", "implementing", "verifying", "staging"].includes(operationalState);
+  const latestCard = state?.chat.messages.flatMap((message) => message.cards).at(-1);
+  const activityStartedAt = activeGoal?.updatedAt ? new Date(activeGoal.updatedAt).getTime() : clock;
+  const elapsedSeconds = Math.max(0, Math.floor((clock - activityStartedAt) / 1000));
 
   useEffect(() => {
     void window.asteria?.installer.state().then(setInstall);
@@ -84,6 +90,11 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
     window.addEventListener("keydown", key);
     return () => { window.removeEventListener("popstate", pop); window.removeEventListener("keydown", key); };
   });
+  useEffect(() => {
+    if (!isWorking) return;
+    const timer = window.setInterval(() => setClock(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [isWorking]);
 
   const choosePanel = async (next?: MaintenancePanel, push = true) => {
     setPanel(next);
@@ -119,17 +130,23 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
   const nextCycle = state?.automation.nextCycleAt ? new Date(state.automation.nextCycleAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "after startup";
   const theme = panel ?? "idle";
 
-  return <div className={`neural-console theme-${theme}`}>
+  return <div className={`neural-console theme-${theme}${isWorking ? " has-active-work" : ""}`}>
     <header className="neural-topbar">
       <Brand />
       <div className="neural-state"><i /><span><small>RaDio state</small><strong>{state?.automation.status ?? "Starting"}</strong></span><span><small>Next cycle</small><strong>{nextCycle}</strong></span></div>
-      <div className="version-chip"><small>Installed / source</small><strong>{install.currentVersion ?? "dev"} / 0.11.0</strong></div>
+      <div className="version-chip"><small>Installed / source</small><strong>{install.currentVersion ?? "dev"} / 0.11.1</strong></div>
       <div className="neural-top-actions"><button className="button secondary" onClick={onReturn}><ArrowLeftIcon /> All projects</button><button className="icon-control" aria-label={state?.automation.paused ? "Resume automation" : "Pause automation"} title={state?.automation.paused ? "Resume automation" : "Pause automation"} onClick={() => void control(state?.automation.paused ? "resume" : "pause")}>{state?.automation.paused ? <PlayIcon /> : <PauseIcon />}</button><button className="icon-control danger" aria-label="Emergency stop" title="Emergency stop" onClick={() => void control("emergency-stop")}><StopCircleIcon /></button></div>
     </header>
 
     <main className="neural-stage">
       <div className="neural-heading"><span className="eyebrow">Application-level autonomous core</span><h1>Neural Console</h1><p>{activeGoal ? activeGoal.currentAction : state?.automation.idleStatus ?? "Initializing local inspection"}</p></div>
       <NeuralBrain state={state} theme={theme} />
+      <AnimatePresence>{isWorking && <motion.button className="activity-thought" aria-label="Open live activity" onClick={() => void choosePanel("activity")} initial={{ opacity: 0, scale: .75, x: -20, y: 12 }} animate={{ opacity: 1, scale: 1, x: 0, y: 0 }} exit={{ opacity: 0, scale: .82, x: -12 }} transition={{ type: "spring", stiffness: 240, damping: 20 }}>
+        <i className="thought-tail tail-one" /><i className="thought-tail tail-two" />
+        <span className="thought-icon"><ActivityIcon weight="bold" /></span>
+        <span className="thought-copy"><small><b /> Live activity · {operationalState}</small><strong>{activeGoal?.currentAction ?? (isStreaming ? "RaDio is responding" : "Processing application state")}</strong><em>{activeGoal?.assignedStar ?? "RaDio"} · {Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, "0")}{latestCard ? ` · ${latestCard.title}` : ""}</em></span>
+        <span className="thought-wave"><i /><i /><i /></span>
+      </motion.button>}</AnimatePresence>
       <nav className="radial-controls" aria-label="RaDio console sections">{panels.map(({ id, label, icon: Icon }, index) => <motion.button key={id} style={{ "--slot": index } as CSSProperties} className={panel === id ? `radial-${id} active` : `radial-${id}`} whileHover={{ scale: 1.06 }} whileTap={{ scale: .96 }} onClick={() => void choosePanel(panel === id ? undefined : id)} aria-label={`Open ${label}`} aria-expanded={panel === id} title={label}><Icon weight="duotone" /><span>{label}</span></motion.button>)}</nav>
       <AnimatePresence mode="wait">{panel && <motion.section key={panel} className={`radial-card card-${panel}`} initial={{ opacity: 0, scale: .94, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }} transition={{ type: "spring", stiffness: 310, damping: 28 }}>
         <header><span>{panels.find((item) => item.id === panel)?.label}</span><button aria-label="Close panel" onClick={() => void choosePanel(undefined)}><XIcon /></button></header>
@@ -143,13 +160,13 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
       </motion.section>}</AnimatePresence>
     </main>
 
-    <motion.section className={chatOpen ? "neural-chat open" : "neural-chat"} layout>
-      {!chatOpen ? <button className="prompt-launcher" onClick={() => { setChatOpen(true); window.setTimeout(() => promptRef.current?.focus(), 120); }}><BrainIcon weight="duotone" /><span>Ask RaDio about Asteria maintenance…</span><kbd>⌘ K</kbd></button> : <>
+    <motion.section className={chatOpen ? "neural-chat open" : "neural-chat"} initial={false} animate={chatOpen ? { top: 92, left: "12vw", right: "12vw", bottom: 18, borderRadius: 20 } : { top: "calc(100% - 73px)", left: 22, right: 22, bottom: 18, borderRadius: 15 }} transition={{ type: "spring", stiffness: 210, damping: 28, mass: .9 }}>
+      <AnimatePresence initial={false} mode="popLayout">{!chatOpen ? <motion.button key="launcher" className="prompt-launcher" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: .97 }} transition={{ duration: .16 }} onClick={() => { setChatOpen(true); window.setTimeout(() => promptRef.current?.focus(), 260); }}><BrainIcon weight="duotone" /><span>Ask RaDio about Asteria maintenance…</span><kbd>⌘ K</kbd></motion.button> : <motion.div key="conversation" className="neural-chat-expanded" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }} transition={{ delay: .1, duration: .24 }}>
         <header><div><RobotIcon weight="duotone" /><span><strong>Maintenance conversations</strong><small>Application scope · encrypted locally</small></span></div><select aria-label="Current conversation"><option>Current thread</option></select><button className="button secondary" onClick={() => setBody("")}>New conversation</button><button className="icon-control" aria-label="Collapse conversation" onClick={() => setChatOpen(false)}><XIcon /></button></header>
         <div className="neural-messages" ref={messagesRef} onScroll={handleMessagesScroll}>{state?.chat.messages.map((message) => <article key={message.id} className={message.author}><span>{message.author === "radio" ? <RobotIcon /> : "You"}</span><div><header><strong>{message.author === "radio" ? "RaDio" : "You"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MaintenanceMarkdown content={message.body} fallbackLabel="Showing plain response" />}{message.status === "streaming" && <><ResponseActivity hasContent={Boolean(message.body)} /><button className="text-button" onClick={() => state && void window.asteria?.maintenance.cancel({ expectedVersion: state.version, idempotencyKey: `cancel_${crypto.randomUUID()}`, messageId: message.id })}><StopCircleIcon /> Stop</button></>}{message.status === "waiting_for_source" && <div className="source-required-card"><FolderOpenIcon /><div><strong>Asteria source required</strong><p>Changes run only in an isolated internal worktree.</p><button className="button primary" onClick={() => void selectSource("folder")}>Choose Asteria repository</button>{localOrbits.length > 0 && <div className="source-orbit-row"><select value={selectedOrbit} onChange={(event) => setSelectedOrbit(event.target.value)}><option value="">Choose local Orbit…</option>{localOrbits.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><button disabled={!selectedOrbit} onClick={() => void selectSource("orbit")}>Use Orbit</button></div>}</div></div>}</div></article>)}</div>
         {error && <p className="radio-send-error" role="alert">{error}</p>}
         <footer><textarea ref={promptRef} aria-label="Maintenance prompt" value={body} onChange={(event) => setBody(event.target.value)} placeholder={readiness.ready ? "Ask, diagnose, or create a durable maintenance goal…" : "Provider unavailable; local inspection remains available"} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button className="icon-control improve" aria-label="Improve prompt" title="Improve prompt locally" onClick={() => setBody(improveMaintenancePrompt(body))}><MagicWandIcon /></button><button className="send-control" aria-label="Send prompt" disabled={!body.trim() || !readiness.ready || isStreaming} onClick={() => void send()}><ArrowUpIcon /></button></footer>
-      </>}
+      </motion.div>}</AnimatePresence>
     </motion.section>
   </div>;
 }
