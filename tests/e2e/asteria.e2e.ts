@@ -102,7 +102,7 @@ test("RaDio chat is project-scoped and denies privileged commands inline", async
   await expect(page.getByRole("paragraph").filter({ hasText: /cannot request privileged commands/ })).toBeVisible();
 });
 
-test("Rafael menu opens maintenance RaDio and sidebar content remains scrollable", async () => {
+test("Rafael menu opens maintenance RaDio and its conversation remains scrollable", async () => {
   await page.getByRole("button", { name: /Rafael Local profile/i }).click();
   await page.getByRole("menuitem", { name: /Maintenance RaDio/i }).click();
   await expect(page.getByRole("heading", { name: "Maintenance RaDio", exact: true })).toBeVisible();
@@ -115,7 +115,24 @@ test("Rafael menu opens maintenance RaDio and sidebar content remains scrollable
   await expect(page.getByText("Asteria source required")).toBeVisible();
   await expect(page.getByRole("button", { name: "Choose Asteria repository" })).toBeVisible();
   await expect(page.getByLabel("Existing local Orbit")).toBeVisible();
-  expect(await page.locator(".sidebar-scroll").evaluate((element) => getComputedStyle(element).overflowY)).toBe("scroll");
+  await page.setViewportSize({ width: 860, height: 520 });
+  const messages = page.locator(".maintenance-messages");
+  const messageMetrics = await messages.evaluate((element) => ({
+    overflowY: getComputedStyle(element).overflowY,
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    workspaceHeight: document.querySelector(".maintenance-workspace")?.getBoundingClientRect().height,
+  }));
+  expect(messageMetrics.overflowY).toBe("auto");
+  expect(messageMetrics.workspaceHeight).toBe(520);
+  expect(messageMetrics.scrollHeight).toBeGreaterThan(messageMetrics.clientHeight);
+  await messages.evaluate((element) => {
+    element.scrollTop = 0;
+    element.scrollTo({ top: element.scrollHeight });
+  });
+  expect(await messages.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await page.getByRole("button", { name: /Return to All projects/i }).click();
+  await expect(page.locator(".sidebar-scroll")).toBeVisible();
 });
 
 test("compact windows preserve the profile menu and visible sidebar scrolling", async () => {
@@ -137,6 +154,7 @@ test("compact windows preserve the profile menu and visible sidebar scrolling", 
   expect(menuBox?.y).toBeGreaterThanOrEqual(0);
   await page.getByRole("menuitem", { name: /Maintenance RaDio/i }).click();
   await expect(page.getByRole("heading", { name: "Maintenance RaDio", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /Return to All projects/i }).click();
 });
 
 test("desktop-height layout keeps the profile footer fully inside the viewport", async () => {
