@@ -35,10 +35,17 @@ export function improveMaintenancePrompt(value: string) {
   return `${request}${needsEvidence ? " Inspect the relevant Asteria state first, preserve unrelated changes, and report the evidence from each verification." : " Use the current application state and keep the response focused on Asteria maintenance."}`;
 }
 
-function NeuralBrain({ state, theme }: { state?: ApplicationMaintenanceSettings; theme: MaintenancePanel | "idle" }) {
+function NeuralBrain({ state, theme, target }: { state?: ApplicationMaintenanceSettings; theme: MaintenancePanel | "idle"; target?: MaintenancePanel }) {
   const active = state?.automation.status ?? "idle";
   const working = ["inspecting", "implementing", "verifying", "staging"].includes(active);
-  return <div className={`neural-brain theme-${theme} state-${active}${working ? " working" : ""}`} role="img" aria-label={`RaDio is ${active}. ${state?.automation.idleStatus ?? "Waiting for application state."}`}>
+  const signalPaths: Record<MaintenancePanel, string> = {
+    goals: "M250 270 C205 268 170 242 138 214 C95 176 52 182 8 210",
+    activity: "M250 150 C250 112 250 62 250 8",
+    findings: "M330 210 C374 192 410 165 474 145",
+    staging: "M330 210 C370 248 410 278 476 294",
+    automation: "M250 270 C250 312 250 360 250 412",
+  };
+  return <div className={`neural-brain theme-${theme} state-${active}${working ? " working" : ""}${target ? ` signal-${target}` : ""}`} role="img" aria-label={`RaDio is ${active}${target ? `; neural signal targets ${target}` : ""}. ${state?.automation.idleStatus ?? "Waiting for application state."}`}>
     <svg viewBox="0 0 500 420" aria-hidden="true">
       <defs><filter id="neural-glow"><feGaussianBlur stdDeviation="5" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter></defs>
       <g className="neural-links">
@@ -47,6 +54,10 @@ function NeuralBrain({ state, theme }: { state?: ApplicationMaintenanceSettings;
       <path className="brain-outline" d="M247 53c-45-31-112 0-112 53-55 2-77 68-42 104-34 45-6 105 43 108 9 52 74 69 111 34 38 35 103 18 112-34 49-3 77-63 43-108 35-36 13-102-42-104 0-53-68-84-113-53Z" />
       <path className="brain-split" d="M247 54v298" />
       <g className="neural-nodes">{[[70,210],[140,120],[245,90],[360,125],[430,215],[145,300],[250,330],[365,295],[175,205],[250,150],[330,210],[250,270]].map(([cx,cy], index) => <circle key={index} cx={cx} cy={cy} r={index % 3 === 0 ? 8 : 5} />)}</g>
+      {target && <g className={`neural-signal neural-signal-${target}`}>
+        <path className="neural-signal-track" d={signalPaths[target]} />
+        <path className="neural-signal-light" d={signalPaths[target]} />
+      </g>}
     </svg>
     {!working && active !== "failed" && <div className="coffee-break"><CoffeeIcon weight="duotone" /><span>{state?.automation.idleStatus ?? "Coffee break"}</span></div>}
   </div>;
@@ -72,6 +83,17 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
   const latestCard = state?.chat.messages.flatMap((message) => message.cards).at(-1);
   const activityStartedAt = activeGoal?.updatedAt ? new Date(activeGoal.updatedAt).getTime() : clock;
   const elapsedSeconds = Math.max(0, Math.floor((clock - activityStartedAt) / 1000));
+  const operationalTarget: MaintenancePanel | undefined = state?.automation.emergencyStopped || ["blocked", "failed"].includes(operationalState)
+    ? "findings"
+    : state?.automation.cycleRunning
+      ? "automation"
+      : operationalState === "staging"
+        ? "staging"
+        : ["inspecting", "implementing", "verifying"].includes(operationalState) || isStreaming
+          ? "activity"
+          : activeGoal?.status === "queued"
+            ? "goals"
+            : undefined;
 
   useEffect(() => {
     void window.asteria?.installer.state().then(setInstall);
@@ -134,20 +156,26 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
     <header className="neural-topbar">
       <Brand />
       <div className="neural-state"><i /><span><small>RaDio state</small><strong>{state?.automation.status ?? "Starting"}</strong></span><span><small>Next cycle</small><strong>{nextCycle}</strong></span></div>
-      <div className="version-chip"><small>Installed / source</small><strong>{install.currentVersion ?? "dev"} / 0.11.2</strong></div>
+      <div className="version-chip"><small>Installed / source</small><strong>{install.currentVersion ?? "dev"} / 0.11.3</strong></div>
       <div className="neural-top-actions"><button className="button secondary" onClick={onReturn}><ArrowLeftIcon /> All projects</button><button className="icon-control" aria-label={state?.automation.paused ? "Resume automation" : "Pause automation"} title={state?.automation.paused ? "Resume automation" : "Pause automation"} onClick={() => void control(state?.automation.paused ? "resume" : "pause")}>{state?.automation.paused ? <PlayIcon /> : <PauseIcon />}</button><button className="icon-control danger" aria-label="Emergency stop" title="Emergency stop" onClick={() => void control("emergency-stop")}><StopCircleIcon /></button></div>
     </header>
 
     <main className="neural-stage">
       <div className="neural-heading"><span className="eyebrow">Application-level autonomous core</span><h1>Neural Console</h1><p>{activeGoal ? activeGoal.currentAction : state?.automation.idleStatus ?? "Initializing local inspection"}</p></div>
-      <NeuralBrain state={state} theme={theme} />
+      <NeuralBrain state={state} theme={theme} target={operationalTarget} />
       <AnimatePresence>{isWorking && <motion.button className="activity-thought" aria-label="Open live activity" onClick={() => void choosePanel("activity")} initial={{ opacity: 0, scale: .75, x: -20, y: 12 }} animate={{ opacity: 1, scale: 1, x: 0, y: 0 }} exit={{ opacity: 0, scale: .82, x: -12 }} transition={{ type: "spring", stiffness: 240, damping: 20 }}>
         <i className="thought-tail tail-one" /><i className="thought-tail tail-two" />
         <span className="thought-icon"><ActivityIcon weight="bold" /></span>
         <span className="thought-copy"><small><b /> Live activity · {operationalState}</small><strong>{activeGoal?.currentAction ?? (isStreaming ? "RaDio is responding" : "Processing application state")}</strong><em>{activeGoal?.assignedStar ?? "RaDio"} · {Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, "0")}{latestCard ? ` · ${latestCard.title}` : ""}</em></span>
         <span className="thought-wave"><i /><i /><i /></span>
       </motion.button>}</AnimatePresence>
-      <nav className="radial-controls" aria-label="RaDio console sections">{panels.map(({ id, label, icon: Icon }, index) => <motion.button key={id} style={{ "--slot": index } as CSSProperties} className={panel === id ? `radial-${id} active` : `radial-${id}`} whileHover={{ scale: 1.06 }} whileTap={{ scale: .96 }} onClick={() => void choosePanel(panel === id ? undefined : id)} aria-label={`Open ${label}`} aria-expanded={panel === id} title={label}><Icon weight="duotone" /><span>{label}</span></motion.button>)}</nav>
+      <nav className="radial-controls" aria-label="RaDio console sections">{panels.map(({ id, label, icon: Icon }, index) => {
+        const selected = panel === id;
+        const operational = operationalTarget === id;
+        return <button key={id} style={{ "--slot": index } as CSSProperties} className={`radial-${id}${selected ? " active" : ""}${operational ? " operational" : ""}`} onClick={() => void choosePanel(selected ? undefined : id)} aria-label={`${selected ? "Close" : "Open"} ${label}${operational ? ", current operational target" : ""}`} aria-expanded={selected} aria-pressed={selected} title={label}>
+          <span className="radial-control-face"><span className="radial-control-icon"><Icon weight={selected || operational ? "fill" : "duotone"} /></span><span className="radial-control-label">{label}</span><i className="radial-active-marker" aria-hidden="true" /></span>
+        </button>;
+      })}</nav>
       <AnimatePresence mode="wait">{panel && <motion.section key={panel} className={`radial-card card-${panel}`} initial={{ opacity: 0, scale: .94, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }} transition={{ type: "spring", stiffness: 310, damping: 28 }}>
         <header><span>{panels.find((item) => item.id === panel)?.label}</span><button aria-label="Close panel" onClick={() => void choosePanel(undefined)}><XIcon /></button></header>
         <div className="radial-card-body">
