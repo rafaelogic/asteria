@@ -1,6 +1,6 @@
 {
   "name": "asteria",
-  "version": "0.12.3",
+  "version": "0.12.4",
   "private": true,
   "description": "Privacy-hardened desktop control plane for autonomous software delivery",
   "desktopName": "asteria.desktop",
@@ -29,6 +29,7 @@
     "generate:icons": "cross-env ELECTRON_RUN_AS_NODE= electron scripts/generate-icons.cjs",
     "audit:privacy": "node scripts/privacy-audit.mjs",
     "build": "npm run audit:privacy && npm run build:web && npm run build:electron && node scripts/prepare-sites-build.mjs",
+    "pretest": "npm run audit:privacy",
     "test": "vitest run",
     "test:e2e": "npm run build && playwright test",
     "test:provider-contracts": "vitest run tests/provider-contracts.test.ts",
