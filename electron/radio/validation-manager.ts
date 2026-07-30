@@ -34,6 +34,10 @@ const ALLOWED_CHECKS: Record<HostValidationId, { label: string; command: string;
 
 const SOURCE_CHANGE_CHECKS: HostValidationId[] = ["unit", "typecheck", "build", "sites", "release"];
 
+export function maintenanceChangesSource(body: string) {
+  return /\b(implement|edit|change|modify|fix|repair|build|test|package|release|reinstall|commit)\b/i.test(body);
+}
+
 function cleanOutput(value: string) {
   return value
     .replace(/\u001b\[[0-9;]*m/g, "")
@@ -44,9 +48,7 @@ function cleanOutput(value: string) {
 
 export function validationChecksForMaintenance(hasSource: boolean, body: string): HostValidationId[] {
   if (!hasSource) return [];
-  if (/\b(implement|edit|change|modify|fix|repair|build|test|package|release|reinstall|commit)\b/i.test(body)) {
-    return [...SOURCE_CHANGE_CHECKS];
-  }
+  if (maintenanceChangesSource(body)) return [...SOURCE_CHANGE_CHECKS];
   return [];
 }
 

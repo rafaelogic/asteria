@@ -88,6 +88,13 @@ export async function checkpoint(worktreePath: string, message: string) {
   return { commit: await git(["rev-parse", "HEAD"], root) };
 }
 
+export async function cleanupTaskWorktree(repositoryPath: string, worktreePath: string, branch?: string) {
+  const repositoryRoot = await realpath(repositoryPath);
+  const target = path.resolve(worktreePath);
+  await git(["worktree", "remove", "--force", "--", target], repositoryRoot).catch(() => undefined);
+  if (branch?.startsWith("asteria/")) await git(["branch", "-D", branch], repositoryRoot).catch(() => undefined);
+}
+
 export async function promoteFastForwardToStaging(dataRoot: string, projectId: string, repositoryPath: string, sourceCommit: string) {
   const repositoryRoot = await realpath(repositoryPath);
   if (!/^[a-f0-9]{7,64}$/i.test(sourceCommit)) throw new Error("A verified source commit is required.");

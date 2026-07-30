@@ -25,6 +25,7 @@ const applicationEnvironment = sanitizedDesktopEnvironment();
 const launchArguments = ["--ozone-platform=x11", "--disable-gpu", "--no-sandbox"];
 const launcherLog = path.join(stateHome, "asteria", "launcher.log");
 delete applicationEnvironment.ELECTRON_RUN_AS_NODE;
+let handlingFatalError = false;
 
 function ensureDirectory(directory, mode = 0o700) {
   mkdirSync(directory, { recursive: true, mode });
@@ -43,9 +44,41 @@ function hardenPrivateTree(root) {
     chmodSync(root, stat.mode & 0o100 ? 0o700 : 0o600);
   }
 }
+function linkTarget(link) { try { return realpathSync(link); } catch { return undefined; } }
+function launchKnownGood() {
+  if (!launch) return;
+  const current = linkTarget(currentLink);
+  if (!current) return;
+  const executable = path.join(current, "asteria");
+  if (!existsSync(executable)) return;
+  const child = spawn(executable, launchArguments, { detached: true, stdio: "ignore", env: applicationEnvironment });
+  child.unref();
+}
+function recoverFromFatalError(error) {
+  if (handlingFatalError) return;
+  handlingFatalError = true;
+  const detail = error instanceof Error ? error.message : String(error);
+  try {
+    ensureDirectory(releaseStateRoot);
+    const state = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf8")) : {};
+    writeFileSync(statePath, JSON.stringify({
+      ...state,
+      status: "failed",
+      failure: detail,
+      failedAt: new Date().toISOString(),
+    }, null, 2), { mode: 0o600 });
+    hardenPrivateTree(releaseStateRoot);
+  } catch {
+    // A read-only or unavailable state directory must not prevent recovery.
+  }
+  try { launchKnownGood(); } catch {}
+  console.error(`Asteria user installation failed: ${detail}`);
+  process.exitCode = 1;
+}
+process.on("uncaughtException", recoverFromFatalError);
+process.on("unhandledRejection", recoverFromFatalError);
 for (const directory of [versionsRoot, releaseStateRoot, binHome, path.join(dataHome, "applications"), path.join(dataHome, "icons", "hicolor", "512x512", "apps")]) ensureDirectory(directory);
 
-function linkTarget(link) { try { return realpathSync(link); } catch { return undefined; } }
 function legacySnapTarget() {
   const codeSnapRoot = path.join(taskHome, "snap", "code");
   try {

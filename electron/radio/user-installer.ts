@@ -7,6 +7,16 @@ import { promisify } from "node:util";
 import type { UserInstallState } from "../../src/types.js";
 
 const execute = promisify(execFile);
+async function runInRepository(root: string, command: string, args: string[], timeout = 30 * 60_000) {
+  return execute(command, args, { cwd: root, timeout, maxBuffer: 20 * 1024 * 1024, env: { ...process.env, ELECTRON_RUN_AS_NODE: "" } });
+}
+
+export async function bootstrapAsteriaDependencies(repositoryPath: string) {
+  const root = path.resolve(repositoryPath);
+  if (!existsSync(path.join(root, "package.json")) || !existsSync(path.join(root, "package-lock.json"))) throw new Error("Asteria dependency bootstrap requires package.json and package-lock.json.");
+  await runInRepository(root, "npm", ["ci", "--prefer-offline", "--no-audit"]);
+}
+
 export function installStatePath() {
   const configured = process.env.XDG_STATE_HOME;
   const snapRelative = configured ? path.relative(path.join(os.homedir(), "snap"), configured) : "..";
@@ -24,8 +34,8 @@ export async function readUserInstallState(): Promise<UserInstallState> {
 export async function prepareUserCandidate(repositoryPath: string) {
   const root = path.resolve(repositoryPath);
   if (!existsSync(path.join(root, "package.json")) || !existsSync(path.join(root, "electron", "main.ts"))) throw new Error("User installation is available only for an Asteria source Orbit.");
-  const run = async (command: string, args: string[], timeout = 30 * 60_000) => execute(command, args, { cwd: root, timeout, maxBuffer: 20 * 1024 * 1024, env: { ...process.env, ELECTRON_RUN_AS_NODE: "" } });
-  await run("npm", ["ci", "--prefer-offline", "--no-audit"]);
+  const run = (command: string, args: string[], timeout = 30 * 60_000) => runInRepository(root, command, args, timeout);
+  await bootstrapAsteriaDependencies(root);
   await run("npm", ["run", "typecheck"]);
   await run("npm", ["run", "build"]);
   await run("npm", ["test"]);

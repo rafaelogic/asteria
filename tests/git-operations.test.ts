@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { checkpoint, createTaskWorktree, repositoryStatus } from "../electron/git";
+import { checkpoint, cleanupTaskWorktree, createTaskWorktree, repositoryStatus } from "../electron/git";
 
 describe("isolated Git operations", () => {
   it("creates task worktrees and checkpoint commits without changing the source worktree", async () => {
@@ -21,6 +21,9 @@ describe("isolated Git operations", () => {
       const result = await checkpoint(worktree.path, "test checkpoint");
       expect(result.commit).toMatch(/^[0-9a-f]{40}$/);
       expect((await repositoryStatus(repository)).clean).toBe(true);
+      await cleanupTaskWorktree(repository, worktree.path, worktree.branch);
+      expect(existsSync(worktree.path)).toBe(false);
+      expect(spawnSync("git", ["show-ref", "--verify", `refs/heads/${worktree.branch}`], { cwd: repository }).status).not.toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

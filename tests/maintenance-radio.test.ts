@@ -9,7 +9,7 @@ describe("Maintenance RaDio context", () => {
       expect(maintenanceRequiresPreview(request)).toBe(true);
     }
     expect(maintenanceRequiresPreview("run the production build")).toBe(false);
-    expect(maintenanceUsesHostPreview(true, "implement the requested changes and run the production build")).toBe(true);
+    expect(maintenanceUsesHostPreview(true, "implement the requested changes and run the production build")).toBe(false);
     expect(maintenanceUsesHostPreview(true, "check the UI layout")).toBe(true);
     expect(maintenanceUsesHostPreview(false, "check the UI layout")).toBe(false);
   });

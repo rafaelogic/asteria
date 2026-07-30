@@ -18,7 +18,7 @@ import {
   MaintenanceSendSchema, MaintenanceCancelSchema, MaintenanceSourceSchema, MaintenanceMutationSchema,
   MaintenanceControlSchema, MaintenanceGoalSchema, MaintenancePanelSchema
 } from "./contracts.js";
-import { checkpoint, cloneRepository, createTaskWorktree, promoteFastForwardToStaging, repositoryStatus } from "./git.js";
+import { checkpoint, cleanupTaskWorktree, cloneRepository, createTaskWorktree, promoteFastForwardToStaging, repositoryStatus } from "./git.js";
 import {
   beginDeviceFlow, configureGitHubStorage, connectionState, createIssue, createPullRequest, deleteBranch, disconnectGitHub,
   getFile, getTree, listBranches, listChecks, listCommits, listIssues, listPullRequests, listRepositories, listReviews, mergePullRequest,
@@ -35,7 +35,7 @@ import { providerForRole, transitionWorkflow } from "../src/workflow.js";
 import { redactSecrets } from "../src/redaction.js";
 import { classifyChatCommand, decideChatCommand, defaultTakeover, maintenanceRequiresSource, maintenanceUsesHostPreview, recordIncident } from "./radio/supervisor.js";
 import { inspectAttachment, revalidateAttachment } from "./radio/attachments.js";
-import { prepareUserCandidate, readUserInstallState } from "./radio/user-installer.js";
+import { bootstrapAsteriaDependencies, prepareUserCandidate, readUserInstallState } from "./radio/user-installer.js";
 import { reconcileMaintenanceRelaunch } from "./radio/maintenance-update.js";
 import type { ApplicationMaintenanceSettings, DeploymentRun, HealthFinding, NetworkApproval, NetworkRequest, Project, ReleaseEvidence } from "../src/types.js";
 import { RaDioAccountVault } from "./radio/account-vault.js";
@@ -43,7 +43,7 @@ import { RaDioCore } from "./radio/core.js";
 import { SkillRegistry } from "./radio/skills/registry.js";
 import { SkillRuntime } from "./radio/skills/runtime.js";
 import { PreviewManager, type PreviewEvidence, type PreviewWindow } from "./radio/preview-manager.js";
-import { HostValidationManager, validationChecksForMaintenance, type HostValidationEvidence, type HostValidationId } from "./radio/validation-manager.js";
+import { HostValidationManager, maintenanceChangesSource, validationChecksForMaintenance, type HostValidationEvidence, type HostValidationId } from "./radio/validation-manager.js";
 import { selectApplicationRaDioAccount, selectRaDioAccount } from "../src/radio.js";
 import { z } from "zod";
 import { execFile, spawn, spawnSync } from "node:child_process";
@@ -64,7 +64,7 @@ let maintenanceCycleTimer: NodeJS.Timeout | undefined;
 const hostValidationManager = new HostValidationManager();
 const skillRegistry = new SkillRegistry();
 const skillRuntime = new SkillRuntime(skillRegistry);
-const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude"; kind?: "workflow" | "chat" | "maintenance" | "authentication" | "repair" | "verification"; chatMessageId?: string; incidentId?: string; maintenanceGoalId?: string; sourceRepositoryPath?: string; worktreePath?: string; profileId?: string; authUrlOpened?: boolean; hostPreview?: boolean; hostValidation?: HostValidationId[] }>();
+const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude"; kind?: "workflow" | "chat" | "maintenance" | "authentication" | "repair" | "verification"; chatMessageId?: string; incidentId?: string; maintenanceGoalId?: string; sourceRepositoryPath?: string; worktreePath?: string; worktreeBranch?: string; profileId?: string; authUrlOpened?: boolean; hostPreview?: boolean; hostValidation?: HostValidationId[] }>();
 const pendingAttachments = new Map<string, Map<string, import("../src/types.js").RaDioChatAttachment>>();
 const runningProjectSessions = new Map<string, Set<string>>();
 const failedProjectSessions = new Set<string>();
@@ -227,11 +227,13 @@ app.whenReady().then(async () => {
     const maintenanceBeforeResume = store.maintenance.get();
     const maintenanceAfterResume = reconcileMaintenanceRelaunch(maintenanceBeforeResume, await readUserInstallState());
     if (maintenanceAfterResume !== maintenanceBeforeResume) {
-      store.maintenance.save(
+      const resumed = store.maintenance.save(
         maintenanceAfterResume,
         maintenanceBeforeResume.version,
         `maintenance_relaunch_${maintenanceAfterResume.goals.find((goal) => goal.install?.status === "healthy" || goal.install?.status === "blocked")?.id ?? Date.now()}`
       );
+      const completed = resumed.goals.find((goal) => goal.install?.status === "healthy" && goal.worktreePath);
+      if (completed?.worktreePath && resumed.source?.path) void cleanupTaskWorktree(resumed.source.path, completed.worktreePath, completed.branch);
     }
     process.env.ASTERIA_NETWORK_PROXY = await networkProxy.listen();
     networkProxy.on("decision", (decision) => {
@@ -632,7 +634,7 @@ async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, r
   const hostPreview = maintenanceUsesHostPreview(Boolean(state.source), body);
   const hostValidation = validationChecksForMaintenance(Boolean(state.source), body);
   let branch: string | undefined;
-  if (state.source && hostValidation.length) {
+  if (state.source) {
     const worktree = await createTaskWorktree(app.getPath("userData"), "application", goalId ?? responseId, state.source.path, `internal-${(goalId ?? responseId).slice(0, 12)}`);
     workspace = worktree.path;
     branch = worktree.branch;
@@ -649,22 +651,25 @@ async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, r
   }
   const context = await createIsolationContext(app.getPath("userData"), sessionId, workspace, state.provider, account?.id);
   let previewEvidence: PreviewEvidence | undefined;
-  if (hostPreview) {
+  if (hostPreview || hostValidation.length) {
     try {
-      previewEvidence = await previewManager.start(sessionId, workspace);
+      await bootstrapAsteriaDependencies(workspace);
+      if (hostPreview) previewEvidence = await previewManager.start(sessionId, workspace);
     } catch (error) {
       const current = store.maintenance.get();
       const now = new Date().toISOString();
-      const detail = redactSecrets(error instanceof Error ? error.message : "Asteria's trusted host could not start the preview.");
+      const detail = redactSecrets(error instanceof Error ? error.message : "Asteria's trusted host could not prepare the isolated worktree.");
       const failed = store.maintenance.save({
         ...current,
-        chat: { ...current.chat, updatedAt: now, messages: current.chat.messages.map((message) => message.id === responseId ? { ...message, body: `Host preview startup failed: ${detail}`, status: "failed" as const, completedAt: now } : message) },
+        goals: goalId ? current.goals.map((goal) => goal.id === goalId ? { ...goal, status: "blocked" as const, blocker: detail, currentAction: "Dependency bootstrap or host preparation failed", updatedAt: now } : goal) : current.goals,
+        automation: goalId ? { ...current.automation, status: "blocked" as const } : current.automation,
+        chat: { ...current.chat, updatedAt: now, messages: current.chat.messages.map((message) => message.id === responseId ? { ...message, body: `Host preparation failed: ${detail}`, status: "failed" as const, completedAt: now } : message) },
       }, current.version, `maintenance_preview_start_failure_${responseId}`);
       window?.webContents.send("maintenance:updated", failed);
       return failed;
     }
   }
-  sessionContext.set(sessionId, { projectId: "application", runId: "maintenance", role: "RaDio", provider: state.provider, kind: "maintenance", chatMessageId: responseId, profileId: account?.id, hostPreview, hostValidation, worktreePath: workspace, sourceRepositoryPath: state.source?.path, maintenanceGoalId: goalId });
+  sessionContext.set(sessionId, { projectId: "application", runId: "maintenance", role: "RaDio", provider: state.provider, kind: "maintenance", chatMessageId: responseId, profileId: account?.id, hostPreview, hostValidation, worktreePath: workspace, worktreeBranch: branch, sourceRepositoryPath: state.source?.path, maintenanceGoalId: goalId });
   const projects = store.projects.list();
   const openIncidents = projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved"));
   const install = await readUserInstallState();
@@ -734,7 +739,12 @@ providers.on("event", (sessionId: string, event) => {
     window?.webContents.send("maintenance:updated", updated);
     if (terminal) {
       sessionContext.delete(sessionId);
-      if (context.hostPreview || context.hostValidation?.length) void finishMaintenanceHostWork(sessionId, context, event.type === "completed");
+      if (context.hostPreview || context.hostValidation?.length) {
+        const finished = finishMaintenanceHostWork(sessionId, context, event.type === "completed");
+        if (!context.maintenanceGoalId && context.sourceRepositoryPath && context.worktreePath) void finished.finally(() => cleanupTaskWorktree(context.sourceRepositoryPath!, context.worktreePath!, context.worktreeBranch));
+        else void finished;
+      }
+      else if (!context.maintenanceGoalId && context.sourceRepositoryPath && context.worktreePath) void cleanupTaskWorktree(context.sourceRepositoryPath, context.worktreePath, context.worktreeBranch);
     }
     return;
   }
@@ -1219,6 +1229,7 @@ ipcMain.handle("maintenance:send", async (_event, raw) => {
   let current = store.maintenance.get();
   if (current.version !== input.expectedVersion) throw new Error("Maintenance RaDio changed. Refresh before sending.");
   const requiresSource = maintenanceRequiresSource(input.body);
+  const changesSource = maintenanceChangesSource(input.body);
   if (requiresSource && current.source) {
     try { await validateAsteriaSource(current.source.path); }
     catch { current = { ...current, source: undefined }; }
@@ -1226,7 +1237,7 @@ ipcMain.handle("maintenance:send", async (_event, raw) => {
   const now = new Date().toISOString();
   const human = { id: randomUUID(), author: "human" as const, body: redactSecrets(input.body), operationId: input.operationId, status: "completed" as const, requiresSource, cards: [], createdAt: now, completedAt: now, redacted: true as const };
   const responseId = randomUUID();
-  const goalId = requiresSource ? randomUUID() : undefined;
+  const goalId = changesSource ? randomUUID() : undefined;
   const waiting = requiresSource && !current.source;
   const radioMessage = {
     id: responseId, author: "radio" as const,

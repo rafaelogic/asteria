@@ -73,7 +73,7 @@ export function maintenanceRequiresPreview(body: string) {
 }
 
 export function maintenanceUsesHostPreview(hasSource: boolean, body: string) {
-  return hasSource && (maintenanceRequiresSource(body) || maintenanceRequiresPreview(body));
+  return hasSource && maintenanceRequiresPreview(body);
 }
 
 export function decideChatCommand(project: Project, command: RaDioChatCommand) {
