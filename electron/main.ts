@@ -952,7 +952,7 @@ ipcMain.handle("radio:safe-handoff", (_event, raw) => {
   const project = store.projects.get(input.projectId);
   const current = accountVault.get(input.accountId);
   if (!project || project.runId !== input.runId || !current) throw new Error("RaDio handoff boundary mismatch.");
-  const policy = { ...project.radio.accountPool, accountIds: project.radio.accountPool.accountIds.filter((id) => id !== current.id) };
+  const policy = project.radio.accountPool;
   const replacement = selectRaDioAccount(accountVault.list(), policy, project.id, input.role, current.capabilities, current.provider);
   const now = new Date().toISOString();
   const checkpoint = {
@@ -970,7 +970,7 @@ ipcMain.handle("radio:safe-handoff", (_event, raw) => {
   };
   return store.projects.save({
     ...project, accountTransitions: [transition, ...project.accountTransitions],
-    events: [{ id: randomUUID(), projectId: project.id, runId: project.runId, type: replacement ? "completed" : "error", timestamp: now, title: replacement ? "RaDio account handoff complete" : "RaDio account pool exhausted", detail: replacement ? `${current.nickname} → ${replacement.nickname} · normalized checkpoint ${checkpoint.id.slice(0, 8)}` : "No compatible authorized account can continue critical-path work.", specialist: "RaDio" }, ...project.events]
+    events: [{ id: randomUUID(), projectId: project.id, runId: project.runId, type: replacement ? "completed" : "error", timestamp: now, title: replacement ? (replacement.id === current.id ? "RaDio is using banked reset capacity" : "RaDio account handoff complete") : "Provider usage limit reached", detail: replacement ? (replacement.id === current.id ? `${current.nickname} will continue until its reported capacity reaches 0%, allowing the provider's banked reset to apply.` : `${current.nickname} → ${replacement.nickname} · normalized checkpoint ${checkpoint.id.slice(0, 8)}`) : "No compatible authorized account has remaining usage. RaDio paused critical-path work until provider capacity resets or another account is connected.", specialist: "RaDio" }, ...project.events]
   }, input.expectedVersion, input.idempotencyKey);
 });
 ipcMain.handle("radio:emergency-stop", (_event, raw) => {

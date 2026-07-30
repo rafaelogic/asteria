@@ -22,6 +22,16 @@ describe("RaDio account routing", () => {
     expect(accountCanRun(account({ id: "draining", provider: "codex", usage: { remainingPercent: 5, source: "provider", capturedAt: "" } }), "asteria", "planner", [])).toBe(false);
   });
 
+  it("uses the only compatible account down to zero to preserve its banked reset", () => {
+    const draining = account({ id: "draining", provider: "codex", usage: { remainingPercent: 3, resetAt: "2026-08-01T00:00:00.000Z", source: "provider", capturedAt: "" } });
+    expect(selectRaDioAccount([draining], { enabled: true, thresholdPercent: 5, crossProvider: true, accountIds: [draining.id] }, "asteria", "planner", [])?.id).toBe(draining.id);
+  });
+
+  it("reports no selectable account once all compatible usage reaches zero", () => {
+    const exhausted = account({ id: "exhausted", provider: "codex", usage: { remainingPercent: 0, source: "provider", capturedAt: "" } });
+    expect(selectRaDioAccount([exhausted], { enabled: true, thresholdPercent: 5, crossProvider: true, accountIds: [exhausted.id] }, "asteria", "planner", [])).toBeUndefined();
+  });
+
   it("does not fabricate unavailable usage", () => {
     expect(accountCanRun(account({ id: "unknown", provider: "codex", usage: { source: "unavailable", capturedAt: "" } }), "asteria", "planner", [])).toBe(true);
   });

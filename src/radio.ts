@@ -26,15 +26,39 @@ Stop when a target is ambiguous, a safety check fails, or authority is insuffici
 Do not reveal secrets, hidden reasoning, raw credentials, or unredacted provider output.`;
 
 export function accountCanRun(profile: ProviderAccountProfile, projectId: string, role: SpecialistRole, requiredCapabilities: string[]) {
+  return accountMeetsRequirements(profile, projectId, role, requiredCapabilities)
+    && (profile.usage.remainingPercent === undefined || profile.usage.remainingPercent > 5);
+}
+
+function accountMeetsRequirements(profile: ProviderAccountProfile, projectId: string, role: SpecialistRole, requiredCapabilities: string[]) {
   const cooldown = profile.cooldownUntil && Date.parse(profile.cooldownUntil) > Date.now();
   const authorizedProject = profile.allowedProjectIds.length === 0 || profile.allowedProjectIds.includes(projectId);
   const authorizedRole = profile.allowedRoles.length === 0 || profile.allowedRoles.includes(role);
   const hasCapabilities = requiredCapabilities.every((capability) => profile.capabilities.includes(capability));
   const capacity = profile.activeSessions < profile.concurrencyLimit;
-  const remaining = profile.usage.remainingPercent;
   return profile.enabled && profile.authenticated && !cooldown && profile.health !== "unavailable"
     && profile.health !== "switching" && authorizedProject && authorizedRole && hasCapabilities && capacity
-    && (remaining === undefined || remaining > 5);
+}
+
+function selectAccountWithBankedReset(
+  profiles: ProviderAccountProfile[],
+  thresholdPercent: number,
+  projectId: string,
+  role: SpecialistRole,
+  requiredCapabilities: string[]
+) {
+  const compatible = profiles.filter((profile) => accountMeetsRequirements(profile, projectId, role, requiredCapabilities));
+  const preferred = compatible.filter((profile) => {
+    const remaining = profile.usage.remainingPercent;
+    return remaining === undefined || remaining > thresholdPercent;
+  });
+  const candidates = preferred.length
+    ? preferred
+    : compatible.filter((profile) => (profile.usage.remainingPercent ?? 0) > 0);
+  return candidates.sort((left, right) => {
+    const capacity = (right.usage.remainingPercent ?? -1) - (left.usage.remainingPercent ?? -1);
+    return capacity || left.failureRate - right.failureRate || left.order - right.order;
+  })[0];
 }
 
 export function selectRaDioAccount(
@@ -46,15 +70,11 @@ export function selectRaDioAccount(
   currentProvider?: ProviderAccountProfile["provider"]
 ) {
   const pinned = policy.rolePins?.[role];
-  return profiles
+  return selectAccountWithBankedReset(profiles
     .filter((profile) => policy.accountIds.includes(profile.id))
     .filter((profile) => !pinned || profile.id === pinned)
-    .filter((profile) => policy.crossProvider || !currentProvider || profile.provider === currentProvider)
-    .filter((profile) => accountCanRun(profile, projectId, role, requiredCapabilities))
-    .sort((left, right) => {
-      const capacity = (right.usage.remainingPercent ?? -1) - (left.usage.remainingPercent ?? -1);
-      return capacity || left.failureRate - right.failureRate || left.order - right.order;
-    })[0];
+    .filter((profile) => policy.crossProvider || !currentProvider || profile.provider === currentProvider),
+  policy.thresholdPercent, projectId, role, requiredCapabilities);
 }
 
 export function selectApplicationRaDioAccount(
@@ -62,13 +82,10 @@ export function selectApplicationRaDioAccount(
   provider: ProviderAccountProfile["provider"],
   requiredCapabilities: string[]
 ) {
-  return profiles
-    .filter((profile) => profile.provider === provider)
-    .filter((profile) => accountCanRun(profile, "application", "planner", requiredCapabilities))
-    .sort((left, right) => {
-      const capacity = (right.usage.remainingPercent ?? -1) - (left.usage.remainingPercent ?? -1);
-      return capacity || left.failureRate - right.failureRate || left.order - right.order;
-    })[0];
+  return selectAccountWithBankedReset(
+    profiles.filter((profile) => profile.provider === provider),
+    5, "application", "planner", requiredCapabilities
+  );
 }
 
 export function radioPolicyDecision(input: {
