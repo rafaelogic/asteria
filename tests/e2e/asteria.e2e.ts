@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -105,23 +105,33 @@ test("RaDio chat is project-scoped and denies privileged commands inline", async
 test("Rafael menu opens maintenance RaDio and its conversation remains scrollable", async () => {
   await page.getByRole("button", { name: /Rafael Local profile/i }).click();
   await page.getByRole("menuitem", { name: /Maintenance RaDio/i }).click();
-  await expect(page.getByRole("heading", { name: "Maintenance RaDio", exact: true })).toBeVisible();
-  await expect(page.getByText("Application health")).toBeVisible();
-  await page.getByLabel("Message Maintenance RaDio").fill("What is the installed version and rollback readiness?");
-  await page.getByLabel("Send to Maintenance RaDio").click();
-  await expect(page.getByText("What is the installed version and rollback readiness?")).toBeVisible();
-  await page.getByLabel("Message Maintenance RaDio").fill("Analyze the Asteria code");
-  await page.getByLabel("Send to Maintenance RaDio").click();
+  await expect(page.getByRole("heading", { name: "Neural Console", exact: true })).toBeVisible();
+  await expect(page.getByText("Application-level autonomous core")).toBeVisible();
+  await page.getByRole("button", { name: /Ask RaDio about Asteria maintenance/i }).click();
+  await page.getByLabel("Maintenance prompt").fill("Analyze the Asteria code");
+  await page.getByLabel("Send prompt").click();
   await expect(page.getByText("Asteria source required")).toBeVisible();
+  await expect(page.getByLabel("Maintenance prompt")).toHaveValue("");
   await expect(page.getByRole("button", { name: "Choose Asteria repository" })).toBeVisible();
-  await expect(page.getByLabel("Existing local Orbit")).toBeVisible();
+  await expect(page.locator(".source-orbit-row select").first()).toBeVisible();
+  for (const request of [
+    "Review the Asteria storage implementation",
+    "Inspect the Asteria isolation implementation",
+    "Verify the Asteria release setup",
+    "Check the Asteria permission setup",
+  ]) {
+    await page.getByLabel("Maintenance prompt").fill(request);
+    await page.getByLabel("Send prompt").click();
+    await expect(page.getByText(request, { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Maintenance prompt")).toHaveValue("");
+  }
   await page.setViewportSize({ width: 860, height: 520 });
-  const messages = page.locator(".maintenance-messages");
+  const messages = page.locator(".neural-messages");
   const messageMetrics = await messages.evaluate((element) => ({
     overflowY: getComputedStyle(element).overflowY,
     clientHeight: element.clientHeight,
     scrollHeight: element.scrollHeight,
-    workspaceHeight: document.querySelector(".maintenance-workspace")?.getBoundingClientRect().height,
+    workspaceHeight: document.querySelector(".neural-console")?.getBoundingClientRect().height,
   }));
   expect(messageMetrics.overflowY).toBe("auto");
   expect(messageMetrics.workspaceHeight).toBe(520);
@@ -131,7 +141,7 @@ test("Rafael menu opens maintenance RaDio and its conversation remains scrollabl
     element.scrollTo({ top: element.scrollHeight });
   });
   expect(await messages.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-  await page.getByRole("button", { name: /Return to All projects/i }).click();
+  await page.getByRole("button", { name: /All projects/i }).click();
   await expect(page.locator(".sidebar-scroll")).toBeVisible();
 });
 
@@ -153,8 +163,8 @@ test("compact windows preserve the profile menu and visible sidebar scrolling", 
   expect(menuBox?.x).toBeGreaterThanOrEqual(0);
   expect(menuBox?.y).toBeGreaterThanOrEqual(0);
   await page.getByRole("menuitem", { name: /Maintenance RaDio/i }).click();
-  await expect(page.getByRole("heading", { name: "Maintenance RaDio", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: /Return to All projects/i }).click();
+  await expect(page.getByRole("heading", { name: "Neural Console", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /All projects/i }).click();
 });
 
 test("desktop-height layout keeps the profile footer fully inside the viewport", async () => {
@@ -183,6 +193,10 @@ test("clean-install fixture bootstraps SQLCipher storage and the account vault",
   const accountVault = path.join(profile, "credentials", "radio-accounts.enc");
   expect(existsSync(database)).toBe(true);
   expect(existsSync(accountVault)).toBe(true);
+  expect(statSync(profile).mode & 0o777).toBe(0o700);
+  expect(statSync(database).mode & 0o777).toBe(0o600);
+  expect(statSync(path.dirname(accountVault)).mode & 0o777).toBe(0o700);
+  expect(statSync(accountVault).mode & 0o777).toBe(0o600);
   expect(readFileSync(database).includes(Buffer.from("robust isolated production acceptance"))).toBe(false);
   expect(readFileSync(database).includes(Buffer.from("Analyze the Asteria code"))).toBe(false);
 });

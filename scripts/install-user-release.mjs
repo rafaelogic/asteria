@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { resolveUserPath, sanitizedDesktopEnvironment } from "./user-paths.mjs";
 
+process.umask(0o077);
 const taskHome = os.homedir();
 const dataHome = resolveUserPath("XDG_DATA_HOME", [".local", "share"]);
 const stateHome = resolveUserPath("XDG_STATE_HOME", [".local", "state"]);
@@ -24,7 +25,25 @@ const applicationEnvironment = sanitizedDesktopEnvironment();
 const launchArguments = ["--ozone-platform=x11", "--disable-gpu", "--no-sandbox"];
 const launcherLog = path.join(stateHome, "asteria", "launcher.log");
 delete applicationEnvironment.ELECTRON_RUN_AS_NODE;
-for (const directory of [versionsRoot, releaseStateRoot, binHome, path.join(dataHome, "applications"), path.join(dataHome, "icons", "hicolor", "512x512", "apps")]) mkdirSync(directory, { recursive: true, mode: 0o700 });
+
+function ensureDirectory(directory, mode = 0o700) {
+  mkdirSync(directory, { recursive: true, mode });
+  const stat = lstatSync(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`Unsafe Asteria directory: ${directory}`);
+  chmodSync(directory, mode);
+}
+function hardenPrivateTree(root) {
+  if (!existsSync(root)) return;
+  const stat = lstatSync(root);
+  if (stat.isSymbolicLink()) return;
+  if (stat.isDirectory()) {
+    chmodSync(root, 0o700);
+    for (const name of readdirSync(root)) hardenPrivateTree(path.join(root, name));
+  } else if (stat.isFile()) {
+    chmodSync(root, stat.mode & 0o100 ? 0o700 : 0o600);
+  }
+}
+for (const directory of [versionsRoot, releaseStateRoot, binHome, path.join(dataHome, "applications"), path.join(dataHome, "icons", "hicolor", "512x512", "apps")]) ensureDirectory(directory);
 
 function linkTarget(link) { try { return realpathSync(link); } catch { return undefined; } }
 function legacySnapTarget() {
@@ -90,7 +109,7 @@ if (rollback) {
   const state = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf8")) : {};
   if (state.snapshot && existsSync(state.snapshot)) {
     const profile = path.join(configHome, "asteria");
-    mkdirSync(profile, { recursive: true, mode: 0o700 });
+    ensureDirectory(profile);
     for (const name of readdirSync(state.snapshot)) {
       cpSync(path.join(state.snapshot, name), path.join(profile, name), {
         recursive: true,
@@ -98,6 +117,7 @@ if (rollback) {
         dereference: false,
       });
     }
+    hardenPrivateTree(profile);
   }
   writeFileSync(statePath, JSON.stringify({ ...state, status: "rolled_back", currentPath: previous, previousPath: current, completedAt: new Date().toISOString() }, null, 2), { mode: 0o600 });
   if (launch) { const child = spawn(path.join(previous, "asteria"), launchArguments, { detached: true, stdio: "ignore", env: applicationEnvironment }); child.unref(); }
@@ -144,5 +164,6 @@ const state = {
   completedAt: new Date().toISOString(),
 };
 writeFileSync(statePath, JSON.stringify(state, null, 2), { mode: 0o600 });
+hardenPrivateTree(releaseStateRoot);
 if (launch) { const child = spawn(path.join(versionPath, "asteria"), launchArguments, { detached: true, stdio: "ignore", env: applicationEnvironment }); child.unref(); }
 console.log(`Installed Asteria ${manifest.version} for ${os.userInfo().username} at ${versionPath}`);

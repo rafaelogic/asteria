@@ -2,6 +2,7 @@ import { cp, mkdir, realpath, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { ProviderId } from "../src/types.js";
+import { ensurePrivateDirectory, hardenPrivateTree } from "./file-permissions.js";
 
 export interface IsolationContext {
   sessionId: string;
@@ -51,6 +52,7 @@ export async function createIsolationContext(
   const tempRoot = path.join(sessionsRoot, sessionId, "tmp");
   [appHome, providerHome, worktreePath, tempRoot].forEach((target) => assertInside(sessionsRoot, target));
   await Promise.all([appHome, providerHome, providerConfigHome, worktreePath, tempRoot].map((target) => mkdir(target, { recursive: true, mode: 0o700 })));
+  for (const target of [appHome, providerHome, providerConfigHome, worktreePath, tempRoot]) ensurePrivateDirectory(target);
   const profileSource = profileId
     ? path.join(userData, "provider-accounts", profileId, provider)
     : path.join(userData, "provider-profiles", provider, provider);
@@ -60,6 +62,7 @@ export async function createIsolationContext(
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   await mirrorProviderSkills(os.homedir(), providerConfigHome, provider);
+  hardenPrivateTree(path.join(sessionsRoot, sessionId));
 
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,
@@ -96,6 +99,8 @@ export async function createProviderProfileContext(userData: string, provider: P
   const providerConfigHome = path.join(providerHome, provider === "codex" ? ".codex" : ".claude");
   const tempRoot = path.join(appHome, "tmp");
   await Promise.all([appHome, providerHome, providerConfigHome, tempRoot].map((target) => mkdir(target, { recursive: true, mode: 0o700 })));
+  for (const target of [appHome, providerHome, providerConfigHome, tempRoot]) ensurePrivateDirectory(target);
+  hardenPrivateTree(appHome);
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,
     SystemRoot: process.env.SystemRoot,

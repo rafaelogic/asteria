@@ -7,6 +7,7 @@ import type { ApplicationMaintenanceSettings, OnboardingDraft, Project, RaDioMem
 import { PRODUCTION_WORKFLOW, recommendedRoles, transitionWorkflow } from "../src/workflow.js";
 import { DEFAULT_RADIO_SETTINGS } from "../src/radio.js";
 import { defaultTakeover } from "./radio/supervisor.js";
+import { ensurePrivateDirectory, ensurePrivateFile } from "./file-permissions.js";
 
 export interface AsteriaStore {
   db: Database.Database;
@@ -465,14 +466,16 @@ export class TelemetryRepository {
 }
 
 export function openStore(dataRoot: string): AsteriaStore {
-  mkdirSync(dataRoot, { recursive: true, mode: 0o700 });
+  ensurePrivateDirectory(dataRoot);
   const { key } = loadDatabaseKey(dataRoot);
-  const db = new Database(path.join(dataRoot, "asteria.sqlite3"));
+  const databasePath = path.join(dataRoot, "asteria.sqlite3");
+  const db = new Database(databasePath);
   db.pragma(`key = "x'${key}'"`);
   db.pragma("cipher = 'sqlcipher'");
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.pragma("secure_delete = ON");
+  for (const file of [databasePath, `${databasePath}-wal`, `${databasePath}-shm`]) ensurePrivateFile(file);
   migrate(db);
   const projects = new ProjectRepository(db);
   const telemetry = new TelemetryRepository(db);

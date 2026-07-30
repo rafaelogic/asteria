@@ -34,4 +34,25 @@ describe("release acceptance gates", () => {
     expect(main).toContain('app.commandLine.appendSwitch("no-sandbox")');
     expect(main).toContain("screen.getDisplayNearestPoint(screen.getCursorScreenPoint())");
   });
+  it("stages Debian packages where APT's sandbox can read them", () => {
+    const installer = readFileSync("scripts/install-linux-package.mjs", "utf8");
+    expect(installer).toContain('mkdtempSync(path.join(os.tmpdir(), "asteria-deb-"))');
+    expect(installer).toContain("chmodSync(stagingRoot, 0o755)");
+    expect(installer).toContain("chmodSync(stagedPackage, 0o644)");
+    expect(installer).toContain('["apt-get", "install", "-y", stagedPackage]');
+    expect(installer).toContain("rmSync(stagingRoot, { recursive: true, force: true })");
+  });
+  it("repairs user-release permissions during installs and upgrades", () => {
+    const installer = readFileSync("scripts/install-user-release.mjs", "utf8");
+    expect(installer).toContain("chmodSync(directory, mode)");
+    expect(installer).toContain("hardenPrivateTree(profile)");
+    expect(installer).toContain("hardenPrivateTree(releaseStateRoot)");
+    expect(installer).toContain("stat.isSymbolicLink()");
+  });
+  it("collects complete dependency trees without shell execution during packaging", () => {
+    const patcher = readFileSync("scripts/patch-electron-builder.mjs", "utf8");
+    expect(patcher).toContain("execFileSync");
+    expect(patcher).toContain("maxBuffer: 64 * 1024 * 1024");
+    expect(patcher).toContain("shell: false");
+  });
 });

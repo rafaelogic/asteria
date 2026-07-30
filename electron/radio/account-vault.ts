@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ProviderAccountProfile, ProviderId, SpecialistRole } from "../../src/types.js";
+import { ensurePrivateDirectory, ensurePrivateFile } from "../file-permissions.js";
 
 type Encrypt = (value: string) => Buffer;
 type Decrypt = (value: Buffer) => string;
@@ -16,6 +17,7 @@ export class RaDioAccountVault {
 
   async load() {
     await mkdir(path.dirname(this.file), { recursive: true, mode: 0o700 });
+    ensurePrivateDirectory(path.dirname(this.file));
     try {
       this.profiles = JSON.parse(this.decrypt(await readFile(this.file))) as ProviderAccountProfile[];
     } catch (error) {
@@ -74,5 +76,6 @@ export class RaDioAccountVault {
 
   private async persist() {
     await writeFile(this.file, this.encrypt(JSON.stringify(this.profiles)), { mode: 0o600 });
+    ensurePrivateFile(this.file);
   }
 }

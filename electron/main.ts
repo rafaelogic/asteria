@@ -25,6 +25,7 @@ import {
   pollDeviceFlow, refreshConnectionState, storeGitHubToken, submitReview, updateIssue, updatePullRequest
 } from "./github.js";
 import { createIsolationContext, createProviderProfileContext } from "./isolation.js";
+import { prepareApplicationData } from "./file-permissions.js";
 import { decideNetworkRequest } from "./network-policy.js";
 import { NetworkPolicyProxy } from "./network-proxy.js";
 import { ProviderManager } from "./providers.js";
@@ -48,6 +49,9 @@ import { execFile, spawn, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
+// Application-owned files default to owner-only even on machines configured
+// with a permissive shell or desktop-session umask.
+process.umask(0o077);
 const providers = new ProviderManager();
 let window: BrowserWindow | null = null;
 let store: AsteriaStore;
@@ -206,6 +210,7 @@ app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
   try {
     configureCredentialBackend();
+    prepareApplicationData(app.getPath("userData"));
     store = openStore(app.getPath("userData"));
     accountVault = new RaDioAccountVault(
       app.getPath("userData"),
