@@ -35,7 +35,7 @@ import { providerForRole, transitionWorkflow } from "../src/workflow.js";
 import { redactSecrets } from "../src/redaction.js";
 import { classifyChatCommand, decideChatCommand, defaultTakeover, maintenanceRequiresSource, maintenanceUsesHostPreview, recordIncident } from "./radio/supervisor.js";
 import { inspectAttachment, revalidateAttachment } from "./radio/attachments.js";
-import { bootstrapAsteriaDependencies, prepareUserCandidate, readUserInstallState } from "./radio/user-installer.js";
+import { bootstrapAsteriaDependencies, prepareAsteriaPreview, prepareUserCandidate, readUserInstallState } from "./radio/user-installer.js";
 import { reconcileMaintenanceRelaunch } from "./radio/maintenance-update.js";
 import type { ApplicationMaintenanceSettings, DeploymentRun, HealthFinding, NetworkApproval, NetworkRequest, Project, ReleaseEvidence } from "../src/types.js";
 import { RaDioAccountVault } from "./radio/account-vault.js";
@@ -653,7 +653,8 @@ async function startMaintenanceProvider(state: ApplicationMaintenanceSettings, r
   let previewEvidence: PreviewEvidence | undefined;
   if (hostPreview || hostValidation.length) {
     try {
-      await bootstrapAsteriaDependencies(workspace);
+      if (hostPreview) await prepareAsteriaPreview(workspace);
+      else await bootstrapAsteriaDependencies(workspace);
       if (hostPreview) previewEvidence = await previewManager.start(sessionId, workspace);
     } catch (error) {
       const current = store.maintenance.get();

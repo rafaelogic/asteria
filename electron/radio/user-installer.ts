@@ -17,6 +17,12 @@ export async function bootstrapAsteriaDependencies(repositoryPath: string) {
   await runInRepository(root, "npm", ["ci", "--prefer-offline", "--no-audit"]);
 }
 
+export async function prepareAsteriaPreview(repositoryPath: string) {
+  const root = path.resolve(repositoryPath);
+  await bootstrapAsteriaDependencies(root);
+  await runInRepository(root, "npm", ["run", "build:web"]);
+}
+
 export function installStatePath() {
   const configured = process.env.XDG_STATE_HOME;
   const snapRelative = configured ? path.relative(path.join(os.homedir(), "snap"), configured) : "..";

@@ -59,6 +59,13 @@ describe("release acceptance gates", () => {
     expect(installer).toContain("await bootstrapAsteriaDependencies(root)");
     expect(installer.indexOf("await bootstrapAsteriaDependencies(root)")).toBeLessThan(installer.indexOf('await run("npm", ["run", "typecheck"])'));
   });
+  it("builds an isolated production client before starting host preview", () => {
+    const installer = readFileSync("electron/radio/user-installer.ts", "utf8");
+    const main = readFileSync("electron/main.ts", "utf8");
+    expect(installer).toContain('await runInRepository(root, "npm", ["run", "build:web"])');
+    expect(main).toContain("await prepareAsteriaPreview(workspace)");
+    expect(main.indexOf("await prepareAsteriaPreview(workspace)")).toBeLessThan(main.indexOf("previewManager.start(sessionId, workspace)"));
+  });
   it("collects complete dependency trees without shell execution during packaging", () => {
     const patcher = readFileSync("scripts/patch-electron-builder.mjs", "utf8");
     expect(patcher).toContain("execFileSync");
