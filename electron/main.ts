@@ -1251,7 +1251,7 @@ ipcMain.handle("maintenance:cancel", (_event, raw) => {
   window?.webContents.send("maintenance:updated", updated);
   return updated;
 });
-ipcMain.handle("installer:state", () => readUserInstallState());
+ipcMain.handle("installer:state", async () => ({ ...(await readUserInstallState()), currentVersion: app.getVersion() }));
 ipcMain.handle("installer:prepare", async (_event, raw) => {
   const input = MutationSchema.parse(raw);
   const project = store.projects.get(input.projectId);

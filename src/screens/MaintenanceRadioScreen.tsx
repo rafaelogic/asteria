@@ -134,7 +134,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
     <header className="neural-topbar">
       <Brand />
       <div className="neural-state"><i /><span><small>RaDio state</small><strong>{state?.automation.status ?? "Starting"}</strong></span><span><small>Next cycle</small><strong>{nextCycle}</strong></span></div>
-      <div className="version-chip"><small>Installed / source</small><strong>{install.currentVersion ?? "dev"} / 0.11.1</strong></div>
+      <div className="version-chip"><small>Installed / source</small><strong>{install.currentVersion ?? "dev"} / 0.11.2</strong></div>
       <div className="neural-top-actions"><button className="button secondary" onClick={onReturn}><ArrowLeftIcon /> All projects</button><button className="icon-control" aria-label={state?.automation.paused ? "Resume automation" : "Pause automation"} title={state?.automation.paused ? "Resume automation" : "Pause automation"} onClick={() => void control(state?.automation.paused ? "resume" : "pause")}>{state?.automation.paused ? <PlayIcon /> : <PauseIcon />}</button><button className="icon-control danger" aria-label="Emergency stop" title="Emergency stop" onClick={() => void control("emergency-stop")}><StopCircleIcon /></button></div>
     </header>
 
