@@ -5,17 +5,28 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+function gitEnvironment(gitHubToken?: string) {
+  const environment = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+  if (!gitHubToken) return environment;
+  return {
+    ...environment,
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader",
+    GIT_CONFIG_VALUE_0: `Authorization: Bearer ${gitHubToken}`,
+  };
+}
+
 function slug(input: string) {
   return input.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "repository";
 }
 
-async function git(args: string[], cwd?: string) {
+async function git(args: string[], cwd?: string, gitHubToken?: string) {
   const result = await execFileAsync("git", args, {
     cwd,
     encoding: "utf8",
     timeout: 120_000,
     maxBuffer: 10 * 1024 * 1024,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }
+    env: gitEnvironment(gitHubToken)
   });
   return result.stdout.trim();
 }
@@ -43,13 +54,13 @@ async function snapshotUnbornRepository(repositoryRoot: string, destination: str
   }
 }
 
-export async function cloneRepository(dataRoot: string, cloneUrl: string, projectName: string, storagePath?: string) {
+export async function cloneRepository(dataRoot: string, cloneUrl: string, projectName: string, storagePath?: string, gitHubToken?: string) {
   const parsed = new URL(cloneUrl);
   if (parsed.protocol !== "https:" || !["github.com"].includes(parsed.hostname)) throw new Error("Only HTTPS GitHub clone URLs are allowed.");
   const root = storagePath ? await realpath(storagePath) : path.join(dataRoot, "repositories");
   await mkdir(root, { recursive: true, mode: 0o700 });
   const destination = path.join(root, `${slug(projectName)}-${Date.now().toString(36)}`);
-  await git(["clone", "--origin", "origin", "--", parsed.toString(), destination]);
+  await git(["clone", "--origin", "origin", "--", parsed.toString(), destination], undefined, gitHubToken);
   return { path: await realpath(destination) };
 }
 
@@ -95,10 +106,10 @@ export async function cleanupTaskWorktree(repositoryPath: string, worktreePath: 
   if (branch?.startsWith("asteria/")) await git(["branch", "-D", branch], repositoryRoot).catch(() => undefined);
 }
 
-export async function promoteFastForwardToStaging(dataRoot: string, projectId: string, repositoryPath: string, sourceCommit: string) {
+export async function promoteFastForwardToStaging(dataRoot: string, projectId: string, repositoryPath: string, sourceCommit: string, gitHubToken?: string) {
   const repositoryRoot = await realpath(repositoryPath);
   if (!/^[a-f0-9]{7,64}$/i.test(sourceCommit)) throw new Error("A verified source commit is required.");
-  await git(["fetch", "--prune", "origin"], repositoryRoot);
+  await git(["fetch", "--prune", "origin"], repositoryRoot, gitHubToken);
   const remoteExists = await git(["show-ref", "--verify", "--quiet", "refs/remotes/origin/staging"], repositoryRoot).then(() => true, () => false);
   const base = remoteExists ? "origin/staging" : await git(["rev-parse", "HEAD"], repositoryRoot);
   const integrationRoot = path.join(dataRoot, "projects", slug(projectId), "integration");
@@ -109,7 +120,7 @@ export async function promoteFastForwardToStaging(dataRoot: string, projectId: s
   try {
     await git(["merge", "--ff-only", sourceCommit], destination);
     const commit = await git(["rev-parse", "HEAD"], destination);
-    await git(["push", "origin", "HEAD:refs/heads/staging"], destination);
+    await git(["push", "origin", "HEAD:refs/heads/staging"], destination, gitHubToken);
     await git(["branch", "-f", "staging", commit], repositoryRoot).catch(() => undefined);
     return { branch: "staging" as const, commit, remoteCommit: commit, fastForwardOnly: true as const };
   } finally {

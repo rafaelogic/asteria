@@ -14,6 +14,15 @@ describe("release acceptance gates", () => {
     expect(workflow).toContain("APPLE_TEAM_ID");
     expect(workflow).toContain("WIN_CSC_LINK");
   });
+  it("routes trusted-host GitHub operations through the encrypted app credential", () => {
+    const git = readFileSync("electron/git.ts", "utf8");
+    const main = readFileSync("electron/main.ts", "utf8");
+    expect(git).toContain('GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader"');
+    expect(git).toContain("GIT_CONFIG_VALUE_0: `Authorization: Bearer ${gitHubToken}`");
+    expect(main).toContain("promoteFastForwardToStaging(app.getPath");
+    expect(main).toContain("getGitHubToken()");
+    expect(main).toContain("Never run git add, commit, fetch, push");
+  });
   it("packages the Asteria identity and a concrete Linux icon source", () => {
     expect(manifest.build.appId).toBe("dev.asteria.desktop");
     expect(manifest.build.productName).toBe("Asteria");
