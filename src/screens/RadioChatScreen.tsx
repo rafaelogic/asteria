@@ -5,6 +5,7 @@ import type { Project, RaDioChatAttachment, UserInstallState } from "../types";
 import { useRadioReadiness } from "../hooks/useRadioReadiness";
 import { ResponseActivity } from "../components/ResponseActivity";
 import { useConversationAutoScroll } from "../hooks/useConversationAutoScroll";
+import { sendRadioChatWithFreshBoundary } from "../radioChatBoundary";
 
 const suggestions = ["What is the current health of this Orbit?", "Activate the right Star for open incidents", "Run the relevant checks", "Explain the latest Waypoint"];
 
@@ -35,7 +36,8 @@ export function RadioChatScreen({ project, onProject }: { project: Project; onPr
     setBusy(true);
     setSendError("");
     try {
-      const updated = await window.asteria.radioChat.send({ ...base, idempotencyKey: `radio_chat_${crypto.randomUUID()}`, body: value, references: [], attachmentIds: attachments.filter((item) => item.status === "ready").map((item) => item.id) });
+      const input = { ...base, idempotencyKey: `radio_chat_${crypto.randomUUID()}`, body: value, references: [], attachmentIds: attachments.filter((item) => item.status === "ready").map((item) => item.id) };
+      const updated = await sendRadioChatWithFreshBoundary(input, window.asteria.radioChat.send, window.asteria.projects.list);
       onProject(updated); setBody(""); setAttachments([]);
     } catch (error) {
       setSendError(error instanceof Error ? error.message : "RaDio could not send this message.");

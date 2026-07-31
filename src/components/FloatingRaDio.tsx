@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowUpIcon, ArrowsOutIcon, RobotIcon, XIcon } from "@phosphor-icons/react";
 import type { Project } from "../types";
 import { useRadioReadiness } from "../hooks/useRadioReadiness";
+import { sendRadioChatWithFreshBoundary } from "../radioChatBoundary";
 
 export function FloatingRaDio({ project, onProject, onMaximize }: {
   project: Project;
@@ -19,7 +20,7 @@ export function FloatingRaDio({ project, onProject, onMaximize }: {
     setBusy(true);
     setError("");
     try {
-      const updated = await window.asteria.radioChat.send({
+      const input = {
         projectId: project.id,
         runId: project.runId,
         expectedVersion: project.version,
@@ -27,7 +28,8 @@ export function FloatingRaDio({ project, onProject, onMaximize }: {
         body,
         references: [],
         attachmentIds: [],
-      });
+      };
+      const updated = await sendRadioChatWithFreshBoundary(input, window.asteria.radioChat.send, window.asteria.projects.list);
       onProject(updated);
       setBody("");
     } catch (value) {

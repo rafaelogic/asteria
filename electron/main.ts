@@ -1437,7 +1437,10 @@ ipcMain.handle("radio-chat:validate-attachment", async (_event, raw) => {
 ipcMain.handle("radio-chat:send", async (_event, raw) => {
   const input = ChatSendSchema.parse(raw);
   const project = store.projects.get(input.projectId);
-  if (!project || project.runId !== input.runId || project.version !== input.expectedVersion || !project.repositoryPath) throw new Error("Chat requires this Orbit's validated local repository.");
+  if (!project) throw new Error("Chat Orbit no longer exists.");
+  if (project.runId !== input.runId) throw new Error("Chat run changed. Open the active run conversation before sending.");
+  if (project.version !== input.expectedVersion) throw new Error("Chat state changed while composing. Refreshing the Orbit is required.");
+  if (!project.repositoryPath) throw new Error("Chat requires this Orbit's validated local repository.");
   const registry = pendingAttachments.get(project.id) ?? new Map();
   const attachments = await Promise.all(input.attachmentIds.map(async (id) => {
     const attachment = registry.get(id);
