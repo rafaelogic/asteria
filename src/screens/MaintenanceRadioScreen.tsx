@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ActivityIcon, ArrowLeftIcon, ArrowUpIcon, BrainIcon, CheckCircleIcon, CoffeeIcon, FolderOpenIcon,
   GitBranchIcon, MagicWandIcon, PauseIcon, PlayIcon, RobotIcon, SlidersHorizontalIcon, StopCircleIcon,
@@ -34,6 +34,15 @@ const neuralNodes: Record<MaintenancePanel, Array<{ label: string; detail: strin
   staging: [{ label: "Branches", detail: "Isolated change locations" }, { label: "Verification", detail: "Checks attached to revisions" }, { label: "Promotion", detail: "Release readiness and blockers" }],
   automation: [{ label: "Cycle", detail: "Inspection cadence and state" }, { label: "Authority", detail: "Execution and approval boundaries" }, { label: "Runtime", detail: "Source, Relay, and installation" }],
 };
+
+type Point = { x: number; y: number };
+type ConnectorGeometry = { width: number; height: number; core: Point; controls: Record<MaintenancePanel, Point>; panel?: Point };
+
+export function neuralConnectorPath(from: Point, to: Point) {
+  const bend = Math.max(42, Math.abs(to.x - from.x) * .42);
+  const direction = to.x >= from.x ? 1 : -1;
+  return `M${from.x} ${from.y} C${from.x + bend * direction} ${from.y} ${to.x - bend * direction} ${to.y} ${to.x} ${to.y}`;
+}
 
 export function improveMaintenancePrompt(value: string) {
   const clean = value.trim().replace(/\s+/g, " ");
@@ -91,6 +100,9 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
   const [error, setError] = useState("");
   const [clock, setClock] = useState(Date.now());
   const promptRef = useRef<HTMLTextAreaElement>(null);
+  const stageRef = useRef<HTMLElement>(null);
+  const expansionRef = useRef<HTMLElement>(null);
+  const [connectors, setConnectors] = useState<ConnectorGeometry>();
   const { messagesRef, handleMessagesScroll, resumeAutoScroll, hasNewMessages } = useConversationAutoScroll(state?.chat.messages);
   const readiness = useRadioReadiness(state?.provider ?? "codex");
   const activeGoal = state?.goals.find((goal) => goal.id === state.activeGoalId);
@@ -141,6 +153,35 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
     const timer = window.setInterval(() => setClock(Date.now()), 1_000);
     return () => window.clearInterval(timer);
   }, [isWorking]);
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const measure = () => {
+      const stageBox = stage.getBoundingClientRect();
+      const controls = {} as Record<MaintenancePanel, Point>;
+      for (const item of panels) {
+        const button = stage.querySelector<HTMLButtonElement>(`.radial-controls [data-panel="${item.id}"]`);
+        if (!button) return;
+        const box = button.getBoundingClientRect();
+        controls[item.id] = { x: box.left + box.width / 2 - stageBox.left, y: box.top + box.height / 2 - stageBox.top };
+      }
+      const expansion = expansionRef.current?.getBoundingClientRect();
+      setConnectors({
+        width: stageBox.width,
+        height: stageBox.height,
+        core: { x: stageBox.width / 2, y: stageBox.height / 2 },
+        controls,
+        panel: expansion ? { x: expansion.left - stageBox.left, y: expansion.top - stageBox.top + Math.min(115, expansion.height / 2) } : undefined,
+      });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(stage);
+    if (expansionRef.current) observer.observe(expansionRef.current);
+    const frame = requestAnimationFrame(measure);
+    const settled = window.setTimeout(measure, 360);
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); window.clearTimeout(settled); };
+  }, [panel]);
 
   const choosePanel = async (next?: MaintenancePanel, push = true) => {
     setPanel(next);
@@ -205,7 +246,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
       <div className="neural-top-actions"><button className="button secondary" onClick={onReturn}><ArrowLeftIcon /> All projects</button></div>
     </header>
 
-    <main className="neural-stage" onClick={handleStageClick}>
+    <main ref={stageRef} className="neural-stage" onClick={handleStageClick}>
       <div className="neural-heading"><span className="eyebrow">Application-level autonomous core</span><h1>Neural Console</h1><p>{activeGoal ? activeGoal.currentAction : state?.automation.idleStatus ?? "Initializing local inspection"}</p></div>
       <aside className="neural-hud-rail neural-mission-rail" aria-label="Current mission context">
         <header><TargetIcon weight="duotone" /><span><small>Current directive</small><strong>{activeGoal?.title ?? "Maintain Asteria"}</strong></span><b>{activeGoal?.status ?? "ready"}</b></header>
@@ -221,10 +262,10 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
         <div className="neural-telemetry-grid"><Metric label="Relay" value={readiness.ready ? `${state?.provider ?? "Codex"} ready` : "Unavailable"} /><Metric label="Findings" value={`${state?.findings.length ?? 0} open`} /><Metric label="Cycle" value={state?.automation.cycleRunning ? "Running" : nextCycle} /><Metric label="Install" value={install.currentVersion ?? "dev"} /></div>
       </aside>}
       <NeuralBrain state={state} theme={theme} target={operationalTarget} />
-      <svg className="neural-command-links" viewBox="0 0 1000 700" preserveAspectRatio="none" aria-hidden="true">
-        <g className="core-section-links"><path className="link-goals" d="M500 350 C430 350 390 385 320 385" /><path className="link-activity" d="M500 350 C480 285 470 205 460 168" /><path className="link-findings" d="M500 350 C555 300 610 273 640 273" /><path className="link-staging" d="M500 350 C570 385 610 445 640 476" /><path className="link-automation" d="M500 350 C480 425 470 520 460 553" /></g>
-        {panel && <path className={`command-bay-link link-${panel}`} d={panel === "findings" ? "M640 273 C760 273 795 145 982 145" : panel === "staging" ? "M640 476 C760 476 800 310 982 310" : panel === "activity" ? "M460 168 C650 168 770 145 982 145" : panel === "automation" ? "M460 553 C670 553 785 310 982 310" : "M320 385 C610 385 760 145 982 145"} />}
-      </svg>
+      {connectors && <svg className="neural-command-links" viewBox={`0 0 ${connectors.width} ${connectors.height}`} aria-hidden="true">
+        <g className="core-section-links">{panels.map(({ id }) => <path key={id} className={`link-${id}`} d={neuralConnectorPath(connectors.core, connectors.controls[id])} />)}</g>
+        {panel && connectors.panel && <path className={`command-bay-link link-${panel}`} d={neuralConnectorPath(connectors.controls[panel], connectors.panel)} />}
+      </svg>}
       {hasIssue && <aside className="neural-issue-readout" role="alert"><WarningIcon weight="fill" /><span><small>{state?.automation.emergencyStopped ? "Emergency stop" : "Execution blocked"}</small><strong>{issueGoal?.title ?? issueFinding?.title ?? "RaDio needs attention"}</strong><p>{issueReason || "Inspect Findings for the latest failure evidence."}</p></span><button onClick={() => void choosePanel("findings")}>Inspect findings</button></aside>}
       <AnimatePresence>{isWorking && <motion.button className="activity-thought" aria-label="Open live activity" onClick={() => void choosePanel("activity")} initial={{ opacity: 0, scale: .75, x: -20, y: 12 }} animate={{ opacity: 1, scale: 1, x: 0, y: 0 }} exit={{ opacity: 0, scale: .82, x: -12 }} transition={{ type: "spring", stiffness: 240, damping: 20 }}>
         <i className="thought-tail tail-one" /><i className="thought-tail tail-two" />
@@ -240,7 +281,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
           <span className="radial-control-face"><span className="radial-control-icon"><Icon weight={selected || operational ? "fill" : "duotone"} /></span><span className="radial-control-label">{label}</span><i className="radial-active-marker" aria-hidden="true" /></span>
         </button>;
       })}</nav>
-      <AnimatePresence mode="wait">{panel && <motion.section key={panel} className={`neural-expansion expansion-${panel}`} aria-label={`${panels.find((item) => item.id === panel)?.label} neural network`} initial={{ opacity: 0, x: 28, scale: .96 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, x: 18, scale: .97 }} transition={{ type: "spring", stiffness: 260, damping: 25 }}>
+      <AnimatePresence mode="wait">{panel && <motion.section ref={expansionRef} key={panel} className={`neural-expansion expansion-${panel}`} aria-label={`${panels.find((item) => item.id === panel)?.label} neural network`} initial={{ opacity: 0, x: 28, scale: .96 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, x: 18, scale: .97 }} transition={{ type: "spring", stiffness: 260, damping: 25 }}>
         <svg className="neural-expansion-links" viewBox="0 0 420 250" aria-hidden="true"><path d="M38 125 C118 125 116 42 210 42 M38 125 C120 125 126 125 210 125 M38 125 C118 125 116 208 210 208" /></svg>
         <div className="neural-expansion-origin"><BrainIcon weight="duotone" /><span>{panels.find((item) => item.id === panel)?.label}</span></div>
         <div className="neural-expansion-nodes">{neuralNodes[panel].map((node, index) => <button key={node.label} className={selectedNode === index ? "selected" : ""} onClick={() => setSelectedNode(index)} aria-label={`Inspect ${node.label}`}><i /><span><strong>{node.label}</strong><small>{node.detail}</small></span></button>)}</div>

@@ -69,3 +69,5 @@ After RaDio verifies and pushes an Asteria change to `staging`, Ascendant may bu
 Every repository change must bump Asteria’s version in both `package.json` and `package-lock.json`. Follow semantic versioning: use a patch bump by default, a minor bump for backward-compatible features, and a major bump for breaking changes.
 
 Maintenance RaDio must distinguish current execution gates from historical findings. Reopening the console or installing a newer verified healthy release must not leave the live core blocked by an older Waypoint; retain that evidence in Findings without presenting it as the current operational state.
+
+Neural Console connector lines must terminate on the actual rendered core, section control, and expanded panel at every supported window size; fixed design-canvas coordinates are not acceptable for responsive connectors.

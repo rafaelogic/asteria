@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { reconcileMaintenanceRelaunch } from "../modules/radio/electron/maintenance-update";
 import { maintenanceChangesSource } from "../modules/radio/electron/validation-manager";
 import type { ApplicationMaintenanceSettings } from "../src/types";
+import { neuralConnectorPath } from "../src/screens/MaintenanceRadioScreen";
 
 const state = {
   version: 1,
@@ -15,6 +16,11 @@ const state = {
 } satisfies ApplicationMaintenanceSettings;
 
 describe("maintenance self-update continuation", () => {
+  it("connects the measured control and panel endpoints exactly", () => {
+    const path = neuralConnectorPath({ x: 500, y: 350 }, { x: 1480, y: 219 });
+    expect(path).toMatch(/^M500 350 C/);
+    expect(path).toMatch(/ 1480 219$/);
+  });
   it("keeps source analysis advisory while routing mutations through the durable workflow", () => {
     expect(maintenanceChangesSource("Analyze the Asteria permission model")).toBe(false);
     expect(maintenanceChangesSource("Fix the Asteria permission model")).toBe(true);
