@@ -552,7 +552,7 @@ function validationEvidenceSummary(evidence: HostValidationEvidence) {
   return `trusted host validation ${evidence.passed ? "passed" : "failed"} — ${checks}. Evidence digest ${evidence.digest.slice(0, 12)}.`;
 }
 
-const idleStatuses = ["Coffee break", "Waiting for the next cycle", "Reviewing the goal queue"];
+const idleStatuses = ["Waiting for the next cycle", "Reviewing the goal queue", "Monitoring local application health"];
 
 async function runMaintenanceInspection(trigger: "startup" | "schedule" | "manual") {
   const current = store.maintenance.get();
@@ -1560,7 +1560,7 @@ ipcMain.handle("maintenance:control", async (_event, raw) => {
       ? { ...current.automation, autoInstall: !current.automation.autoInstall }
     : input.action === "emergency-stop"
       ? { ...current.automation, paused: true, emergencyStopped: true, cycleRunning: false, status: "failed" as const, idleStatus: "Emergency stopped" }
-      : { ...current.automation, enabled: true, paused: false, emergencyStopped: false, idleStatus: "Reviewing the goal queue" };
+      : { ...current.automation, enabled: true, paused: false, emergencyStopped: false, status: "idle" as const, idleStatus: "Reviewing the goal queue" };
   const updated = store.maintenance.save({ ...current, automation, updatedAt: now }, input.expectedVersion, input.idempotencyKey);
   window?.webContents.send("maintenance:updated", updated);
   if (input.action === "run" || input.action === "resume") return await runMaintenanceInspection("manual") ?? store.maintenance.get();

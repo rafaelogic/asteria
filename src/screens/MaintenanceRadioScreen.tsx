@@ -77,7 +77,6 @@ function NeuralBrain({ state, theme, target }: { state?: ApplicationMaintenanceS
       </g>}
     </svg>
     <div className="neural-core-readout" aria-hidden="true"><small>RaDio core</small><strong>{active}</strong><span>{working ? "Live execution" : "System ready"}</span></div>
-    {!working && active !== "failed" && <div className="coffee-break"><CoffeeIcon weight="duotone" /><span>{state?.automation.idleStatus ?? "Coffee break"}</span></div>}
   </div>;
 }
 
@@ -92,7 +91,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
   const [error, setError] = useState("");
   const [clock, setClock] = useState(Date.now());
   const promptRef = useRef<HTMLTextAreaElement>(null);
-  const { messagesRef, handleMessagesScroll, resumeAutoScroll } = useConversationAutoScroll(state?.chat.messages);
+  const { messagesRef, handleMessagesScroll, resumeAutoScroll, hasNewMessages } = useConversationAutoScroll(state?.chat.messages);
   const readiness = useRadioReadiness(state?.provider ?? "codex");
   const activeGoal = state?.goals.find((goal) => goal.id === state.activeGoalId);
   const localOrbits = projects.filter((project) => project.repositoryPath);
@@ -113,6 +112,14 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
           : activeGoal?.status === "queued"
             ? "goals"
             : undefined;
+  const issueGoal = activeGoal && ["blocked", "failed"].includes(activeGoal.status)
+    ? activeGoal
+    : state?.goals.find((goal) => ["blocked", "failed"].includes(goal.status));
+  const issueFinding = state?.findings.find((finding) => ["critical", "error"].includes(finding.severity));
+  const hasIssue = Boolean(state?.automation.emergencyStopped || ["blocked", "failed"].includes(operationalState) || issueGoal || issueFinding);
+  const issueReason = state?.automation.emergencyStopped
+    ? "Emergency stop is active. Resume only after reviewing the interrupted operation."
+    : issueGoal?.blocker ?? issueGoal?.currentAction ?? issueFinding?.detail ?? error;
 
   useEffect(() => {
     void window.asteria?.installer.state().then(setInstall);
@@ -186,12 +193,18 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
   const nextCycle = state?.automation.nextCycleAt ? new Date(state.automation.nextCycleAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "after startup";
   const theme = panel ?? "idle";
 
-  return <div className={`neural-console theme-${theme}${isWorking ? " has-active-work" : ""}`}>
+  return <div className={`neural-console theme-${theme}${isWorking ? " has-active-work" : ""}${hasIssue ? " has-issue" : ""}`}>
     <header className="neural-topbar">
       <Brand />
-      <div className="neural-state"><i /><span><small>RaDio state</small><strong>{state?.automation.status ?? "Starting"}</strong></span><span><small>Next cycle</small><strong>{nextCycle}</strong></span></div>
+      <div className="neural-state"><span><small>Next cycle</small><strong>{nextCycle}</strong></span></div>
+      <div className="neural-command-status" role="status" aria-label={`RaDio ${operationalState}`}>
+        {(state?.automation.paused || state?.automation.emergencyStopped) && <CoffeeIcon weight="duotone" aria-label="RaDio is paused" />}
+        <i /><span><small>RaDio core</small><strong>{state?.automation.emergencyStopped ? "Stopped" : state?.automation.paused ? "Paused" : operationalState}</strong></span>
+        <button className="icon-control" aria-label={state?.automation.paused ? "Resume automation" : "Pause automation"} title={state?.automation.paused ? "Resume automation" : "Pause automation"} onClick={() => void control(state?.automation.paused ? "resume" : "pause")}>{state?.automation.paused ? <PlayIcon /> : <PauseIcon />}</button>
+        <button className="icon-control danger" aria-label="Emergency stop" title="Emergency stop" onClick={() => void control("emergency-stop")}><StopCircleIcon /></button>
+      </div>
       <div className="version-chip"><small>Installed / source</small><strong>{install.currentVersion ?? "dev"} / {state?.source?.version ?? "not selected"}</strong></div>
-      <div className="neural-top-actions"><button className="button secondary" onClick={onReturn}><ArrowLeftIcon /> All projects</button><button className="icon-control" aria-label={state?.automation.paused ? "Resume automation" : "Pause automation"} title={state?.automation.paused ? "Resume automation" : "Pause automation"} onClick={() => void control(state?.automation.paused ? "resume" : "pause")}>{state?.automation.paused ? <PlayIcon /> : <PauseIcon />}</button><button className="icon-control danger" aria-label="Emergency stop" title="Emergency stop" onClick={() => void control("emergency-stop")}><StopCircleIcon /></button></div>
+      <div className="neural-top-actions"><button className="button secondary" onClick={onReturn}><ArrowLeftIcon /> All projects</button></div>
     </header>
 
     <main className="neural-stage" onClick={handleStageClick}>
@@ -201,11 +214,20 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
         <dl><div><dt>Active owner</dt><dd>{activeGoal?.assignedStar ?? "RaDio"}</dd></div><div><dt>Source binding</dt><dd>{state?.source?.repository ?? "Not selected"}</dd></div><div><dt>Goal queue</dt><dd>{state?.goals.length ?? 0} objectives</dd></div></dl>
         <p>{activeGoal?.currentAction ?? state?.automation.idleStatus ?? "Waiting for application state."}</p>
       </aside>
+      <aside className="neural-hud-rail neural-queue-rail" aria-label="Goal queue processes">
+        <header><BrainIcon weight="duotone" /><span><small>Goal queue</small><strong>{state?.goals.length ?? 0} tracked processes</strong></span><b>{state?.goals.filter((goal) => !["completed", "cancelled"].includes(goal.status)).length} open</b></header>
+        <div className="neural-queue-list">{state?.goals.slice(0, 5).map((goal) => <button key={goal.id} onClick={() => { void choosePanel("goals"); setSelectedNode(goal.status === "completed" || goal.status === "cancelled" ? 2 : goal.status === "queued" ? 0 : 1); }}><i className={`status-${goal.status}`} /><span><strong>{goal.title}</strong><small>{goal.assignedStar} · {goal.status}</small></span><em>P{goal.priority}</em></button>)}{!state?.goals.length && <p>No maintenance processes are queued.</p>}</div>
+      </aside>
       {!panel && <aside className="neural-hud-rail neural-system-rail" aria-label="System telemetry">
         <header><ActivityIcon weight="duotone" /><span><small>System telemetry</small><strong>Local control plane</strong></span><b>{readiness.ready ? "online" : "limited"}</b></header>
         <div className="neural-telemetry-grid"><Metric label="Relay" value={readiness.ready ? `${state?.provider ?? "Codex"} ready` : "Unavailable"} /><Metric label="Findings" value={`${state?.findings.length ?? 0} open`} /><Metric label="Cycle" value={state?.automation.cycleRunning ? "Running" : nextCycle} /><Metric label="Install" value={install.currentVersion ?? "dev"} /></div>
       </aside>}
       <NeuralBrain state={state} theme={theme} target={operationalTarget} />
+      <svg className="neural-command-links" viewBox="0 0 1000 700" preserveAspectRatio="none" aria-hidden="true">
+        <g className="core-section-links"><path className="link-goals" d="M500 350 C430 350 390 385 320 385" /><path className="link-activity" d="M500 350 C480 285 470 205 460 168" /><path className="link-findings" d="M500 350 C555 300 610 273 640 273" /><path className="link-staging" d="M500 350 C570 385 610 445 640 476" /><path className="link-automation" d="M500 350 C480 425 470 520 460 553" /></g>
+        {panel && <path className={`command-bay-link link-${panel}`} d={panel === "findings" ? "M640 273 C760 273 795 145 982 145" : panel === "staging" ? "M640 476 C760 476 800 310 982 310" : panel === "activity" ? "M460 168 C650 168 770 145 982 145" : panel === "automation" ? "M460 553 C670 553 785 310 982 310" : "M320 385 C610 385 760 145 982 145"} />}
+      </svg>
+      {hasIssue && <aside className="neural-issue-readout" role="alert"><WarningIcon weight="fill" /><span><small>{state?.automation.emergencyStopped ? "Emergency stop" : "Execution blocked"}</small><strong>{issueGoal?.title ?? issueFinding?.title ?? "RaDio needs attention"}</strong><p>{issueReason || "Inspect Findings for the latest failure evidence."}</p></span><button onClick={() => void choosePanel("findings")}>Inspect findings</button></aside>}
       <AnimatePresence>{isWorking && <motion.button className="activity-thought" aria-label="Open live activity" onClick={() => void choosePanel("activity")} initial={{ opacity: 0, scale: .75, x: -20, y: 12 }} animate={{ opacity: 1, scale: 1, x: 0, y: 0 }} exit={{ opacity: 0, scale: .82, x: -12 }} transition={{ type: "spring", stiffness: 240, damping: 20 }}>
         <i className="thought-tail tail-one" /><i className="thought-tail tail-two" />
         <span className="thought-icon"><ActivityIcon weight="bold" /></span>
@@ -226,26 +248,75 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
         <div className="neural-expansion-nodes">{neuralNodes[panel].map((node, index) => <button key={node.label} className={selectedNode === index ? "selected" : ""} onClick={() => setSelectedNode(index)} aria-label={`Inspect ${node.label}`}><i /><span><strong>{node.label}</strong><small>{node.detail}</small></span></button>)}</div>
         <AnimatePresence>{selectedNode !== undefined && <motion.aside className="neural-thought-detail" initial={{ opacity: 0, x: -16, scale: .94 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, x: -10 }}>
           <header><span><small>Neural thought · {panels.find((item) => item.id === panel)?.label}</small><strong>{neuralNodes[panel][selectedNode].label}</strong><em>{neuralNodes[panel][selectedNode].detail}</em></span><button aria-label="Close thought detail" onClick={() => setSelectedNode(undefined)}><XIcon /></button></header>
-          <div className="radial-card-body">
-          {panel === "goals" && <>{state?.goals.length ? state.goals.map((goal) => <article className="console-row" key={goal.id}><span><strong>{goal.title}</strong><small>P{goal.priority} · {goal.assignedStar} · {goal.status}</small><p>{goal.currentAction}</p></span><div>{goal.status === "blocked" && <button onClick={() => void goalAction(goal.id, "retry")}>Retry</button>}<button onClick={() => void goalAction(goal.id, "prioritize")}>Prioritize</button></div></article>) : <Empty label="No goals queued" />}</>}
-          {panel === "activity" && <>{activeGoal ? <article className="activity-focus"><ActivityIcon /><span><small>Active Star · {activeGoal.assignedStar}</small><strong>{activeGoal.title}</strong><p>{activeGoal.currentAction}</p><b>{activeGoal.attempts}/3 attempts</b></span></article> : <Empty label="No active execution" />}{state?.chat.messages.slice(-5).reverse().map((message) => <article className="console-row" key={message.id}><span><strong>{message.author === "radio" ? "RaDio response" : "Owner prompt"}</strong><small>{message.status} · {new Date(message.createdAt).toLocaleTimeString()}</small></span></article>)}</>}
-          {panel === "findings" && <>{state?.findings.length ? state.findings.map((finding) => <article className={`console-row severity-${finding.severity}`} key={finding.id}><WarningIcon /><span><strong>{finding.title}</strong><small>{finding.category} · {finding.severity}</small><p>{finding.detail}</p></span></article>) : <Empty label="No internal findings" />}</>}
-          {panel === "staging" && <>{state?.goals.filter((goal) => goal.branch || goal.staging).length ? state.goals.filter((goal) => goal.branch || goal.staging).map((goal) => <article className="console-row" key={goal.id}><GitBranchIcon /><span><strong>{goal.branch ?? "Awaiting isolated branch"}</strong><small>{goal.staging?.status ?? goal.status}</small><p>{goal.staging?.detail ?? goal.currentAction}</p>{goal.commit && <code>{goal.commit.slice(0, 12)}</code>}</span></article>) : <Empty label="No staging promotions yet" />}</>}
-          {panel === "automation" && <div className="automation-grid"><Metric label="Startup cycle" value={state?.automation.startupInspection ? "Enabled" : "Disabled"} /><Metric label="Schedule" value={`Every ${state?.automation.intervalMinutes ?? 30} min`} /><Metric label="Daily features" value={`${state?.automation.dailyFeatureLimit ?? 1} maximum`} /><Metric label="Self-install" value={state?.automation.autoInstall ? "Verified staging revisions" : "Disabled"} /><Metric label="Source binding" value={state?.source ? state.source.repository : "Required"} /><Metric label="Provider" value={readiness.ready ? `${state?.provider} ready` : "Unavailable"} /><button className="button secondary" onClick={() => void control("toggle-auto-install")}>{state?.automation.autoInstall ? "Disable self-install" : "Enable self-install"}</button><button className="button primary" disabled={!state?.source || state.automation.cycleRunning} onClick={() => void control("run")}><PlayIcon /> Run inspection now</button></div>}
-          </div>
+          <div className="radial-card-body"><ThoughtContent panel={panel} node={selectedNode} state={state} activeGoal={activeGoal} readinessReady={readiness.ready} onGoalAction={goalAction} onControl={control} /></div>
         </motion.aside>}</AnimatePresence>
       </motion.section>}</AnimatePresence>
     </main>
 
     <motion.section className={chatOpen ? "neural-chat open" : "neural-chat"} initial={false} animate={chatOpen ? { top: 92, left: "12vw", right: "12vw", bottom: 18, borderRadius: 20 } : { top: "calc(100% - 73px)", left: 22, right: 22, bottom: 18, borderRadius: 15 }} transition={{ type: "spring", stiffness: 210, damping: 28, mass: .9 }}>
-      <AnimatePresence initial={false} mode="popLayout">{!chatOpen ? <motion.button key="launcher" className="prompt-launcher" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: .97 }} transition={{ duration: .16 }} onClick={() => { setChatOpen(true); window.setTimeout(() => promptRef.current?.focus(), 260); }}><BrainIcon weight="duotone" /><span>Ask RaDio about Asteria maintenance…</span><kbd>⌘ K</kbd></motion.button> : <motion.div key="conversation" className="neural-chat-expanded" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }} transition={{ delay: .1, duration: .24 }}>
+      <AnimatePresence initial={false} mode="popLayout">{!chatOpen ? <motion.button key="launcher" className="prompt-launcher" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: .97 }} transition={{ duration: .16 }} onClick={() => { setChatOpen(true); window.setTimeout(() => { resumeAutoScroll(); promptRef.current?.focus(); }, 260); }}><BrainIcon weight="duotone" /><span>Ask RaDio about Asteria maintenance…</span><kbd>⌘ K</kbd></motion.button> : <motion.div key="conversation" className="neural-chat-expanded" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }} transition={{ delay: .1, duration: .24 }}>
         <header><div><RobotIcon weight="duotone" /><span><strong>Maintenance conversations</strong><small>Application scope · encrypted locally</small></span></div><select aria-label="Current conversation"><option>Current thread</option></select><button className="button secondary" onClick={() => setBody("")}>New conversation</button><button className="icon-control" aria-label="Collapse conversation" onClick={() => setChatOpen(false)}><XIcon /></button></header>
         <div className="neural-messages" ref={messagesRef} onScroll={handleMessagesScroll}>{state?.chat.messages.map((message) => <article key={message.id} className={message.author}><span>{message.author === "radio" ? <RobotIcon /> : "You"}</span><div className="neural-message-content"><header><strong>{message.author === "radio" ? "RaDio" : "You"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MaintenanceMarkdown content={message.body} fallbackLabel="Showing plain response" />}{message.status === "streaming" && <><ResponseActivity hasContent={Boolean(message.body)} /><button className="text-button" onClick={() => state && void window.asteria?.maintenance.cancel({ expectedVersion: state.version, idempotencyKey: `cancel_${crypto.randomUUID()}`, messageId: message.id })}><StopCircleIcon /> Stop</button></>}{message.status === "waiting_for_source" && <div className="source-required-card"><FolderOpenIcon /><div><strong>Asteria source required</strong><p>Changes run only in an isolated internal worktree.</p><button className="button primary" onClick={() => void selectSource("folder")}>Choose Asteria repository</button>{localOrbits.length > 0 && <div className="source-orbit-row"><select value={selectedOrbit} onChange={(event) => setSelectedOrbit(event.target.value)}><option value="">Choose local Orbit…</option>{localOrbits.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><button disabled={!selectedOrbit} onClick={() => void selectSource("orbit")}>Use Orbit</button></div>}</div></div>}</div></article>)}</div>
+        {hasNewMessages && <button className="jump-to-latest" onClick={resumeAutoScroll}><ArrowUpIcon /> Latest message</button>}
         {error && <p className="radio-send-error" role="alert">{error}</p>}
         <footer><textarea ref={promptRef} aria-label="Maintenance prompt" value={body} onChange={(event) => setBody(event.target.value)} placeholder={readiness.ready ? "Ask, diagnose, or create a durable maintenance goal…" : "Provider unavailable; local inspection remains available"} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button className="icon-control improve" aria-label="Improve prompt" title="Improve prompt locally" onClick={() => setBody(improveMaintenancePrompt(body))}><MagicWandIcon /></button><button className="send-control" aria-label="Send prompt" disabled={!body.trim() || !readiness.ready || isStreaming} onClick={() => void send()}><ArrowUpIcon /></button></footer>
       </motion.div>}</AnimatePresence>
     </motion.section>
   </div>;
+}
+
+function ThoughtContent({ panel, node = 0, state, activeGoal, readinessReady, onGoalAction, onControl }: {
+  panel: MaintenancePanel;
+  node?: number;
+  state?: ApplicationMaintenanceSettings;
+  activeGoal?: ApplicationMaintenanceSettings["goals"][number];
+  readinessReady: boolean;
+  onGoalAction: (goalId: string, action: "cancel" | "retry" | "prioritize") => Promise<void>;
+  onControl: (action: "run" | "pause" | "resume" | "emergency-stop" | "toggle-auto-install") => Promise<void>;
+}) {
+  const goals = state?.goals ?? [];
+  const findings = state?.findings ?? [];
+  if (panel === "goals") {
+    const scoped = node === 0
+      ? goals.filter((goal) => goal.status === "queued" || goal.status === "blocked")
+      : node === 1
+        ? goals.filter((goal) => ["inspecting", "implementing", "verifying", "staging", "installing", "relaunching", "failed"].includes(goal.status))
+        : goals.filter((goal) => ["completed", "cancelled"].includes(goal.status));
+    return <>{scoped.length ? scoped.map((goal) => <article className="console-row" key={goal.id}><span><strong>{goal.title}</strong><small>P{goal.priority} · {goal.assignedStar} · {goal.status}</small><p>{goal.blocker ?? goal.currentAction}</p><em>{goal.rationale}</em></span><div>{goal.status === "blocked" && <button onClick={() => void onGoalAction(goal.id, "retry")}>Retry</button>}<button onClick={() => void onGoalAction(goal.id, "prioritize")}>Prioritize</button></div></article>) : <Empty label={node === 0 ? "No queued goals" : node === 1 ? "No goals currently executing" : "No resolved goals yet"} />}</>;
+  }
+  if (panel === "activity") {
+    if (node === 0) return activeGoal ? <article className="activity-focus"><ActivityIcon /><span><small>Active Star · {activeGoal.assignedStar}</small><strong>{activeGoal.title}</strong><p>{activeGoal.blocker ?? activeGoal.currentAction}</p><b>{activeGoal.attempts}/3 attempts · P{activeGoal.priority}</b></span></article> : <Empty label="No active execution" />;
+    if (node === 1) return <div className="automation-grid"><Metric label="RaDio identity" value="Executive coordinator" /><Metric label="Active Star" value={activeGoal?.assignedStar ?? "None"} /><Metric label="Relay" value={readinessReady ? `${state?.provider ?? "Codex"} ready` : "Unavailable"} /><Metric label="Operation" value={state?.automation.status ?? "Starting"} /></div>;
+    return <>{state?.chat.messages.slice(-8).reverse().map((message) => <article className="console-row" key={message.id}><span><strong>{message.author === "radio" ? "RaDio response" : "Owner prompt"}</strong><small>{message.status} · {new Date(message.createdAt).toLocaleTimeString()}</small><p>{message.body.slice(0, 150) || "Waiting for content"}</p></span></article>)}</>;
+  }
+  if (panel === "findings") {
+    if (node === 0) {
+      const alerts = findings.filter((finding) => finding.severity !== "info");
+      return <>{alerts.length ? alerts.map((finding) => <FindingRow key={finding.id} finding={finding} />) : <Empty label="No warning or error alerts" />}</>;
+    }
+    if (node === 1) return <>{findings.length ? findings.map((finding) => <article className="console-row" key={finding.id}><CheckCircleIcon /><span><strong>{finding.title}</strong><small>Observed {new Date(finding.observedAt).toLocaleString()}</small><p>{finding.detail}</p><code>{finding.fingerprint.slice(0, 24)}</code></span></article>) : <Empty label="No observed evidence" />}</>;
+    const diagnoses = goals.filter((goal) => goal.blocker || goal.findings.length);
+    return <>{diagnoses.length ? diagnoses.map((goal) => <article className="console-row severity-error" key={goal.id}><WarningIcon /><span><strong>{goal.title}</strong><small>{goal.status} · {goal.assignedStar}</small><p>{goal.blocker ?? goal.findings.join(" · ")}</p><em>Next: {goal.currentAction}</em></span></article>) : <Empty label="No active diagnoses" />}</>;
+  }
+  if (panel === "staging") {
+    if (node === 0) {
+      const branches = goals.filter((goal) => goal.branch || goal.worktreePath);
+      return <>{branches.length ? branches.map((goal) => <article className="console-row" key={goal.id}><GitBranchIcon /><span><strong>{goal.branch ?? "Isolated worktree"}</strong><small>{goal.assignedStar} · {goal.status}</small><p>{goal.worktreePath ?? goal.currentAction}</p></span></article>) : <Empty label="No isolated branches" />}</>;
+    }
+    if (node === 1) {
+      const verified = goals.filter((goal) => goal.validation?.length || goal.commit);
+      return <>{verified.length ? verified.map((goal) => <article className="console-row" key={goal.id}><CheckCircleIcon /><span><strong>{goal.title}</strong><small>{goal.commit?.slice(0, 12) ?? "Pending revision"}</small><p>{goal.validation?.join(" · ") ?? "Revision checkpoint recorded"}</p></span></article>) : <Empty label="No revision verification yet" />}</>;
+    }
+    const promotions = goals.filter((goal) => goal.staging || goal.install);
+    return <>{promotions.length ? promotions.map((goal) => <article className="console-row" key={goal.id}><GitBranchIcon /><span><strong>{goal.staging?.status ?? goal.install?.status ?? goal.status}</strong><small>{goal.install?.version ?? goal.commit?.slice(0, 12) ?? "Promotion pending"}</small><p>{goal.staging?.detail ?? goal.currentAction}</p></span></article>) : <Empty label="No staging promotions yet" />}</>;
+  }
+  if (node === 0) return <div className="automation-grid"><Metric label="Startup cycle" value={state?.automation.startupInspection ? "Enabled" : "Disabled"} /><Metric label="Schedule" value={`Every ${state?.automation.intervalMinutes ?? 30} min`} /><Metric label="Last cycle" value={state?.automation.lastCycleAt ? new Date(state.automation.lastCycleAt).toLocaleTimeString() : "Not run"} /><Metric label="Next cycle" value={state?.automation.nextCycleAt ? new Date(state.automation.nextCycleAt).toLocaleTimeString() : "After startup"} /><button className="button primary" disabled={!state?.source || state?.automation.cycleRunning} onClick={() => void onControl("run")}><PlayIcon /> Run inspection now</button></div>;
+  if (node === 1) return <div className="automation-grid"><Metric label="Automation" value={state?.automation.enabled ? "Enabled" : "Disabled"} /><Metric label="Authority" value={state?.automation.emergencyStopped ? "Emergency stopped" : state?.automation.paused ? "Paused by owner" : "Available"} /><Metric label="Self-install" value={state?.automation.autoInstall ? "Verified revisions" : "Disabled"} /><Metric label="Daily features" value={`${state?.automation.dailyFeatureLimit ?? 1} maximum`} /><button className="button secondary" onClick={() => void onControl("toggle-auto-install")}>{state?.automation.autoInstall ? "Disable self-install" : "Enable self-install"}</button></div>;
+  return <div className="automation-grid"><Metric label="Source binding" value={state?.source?.repository ?? "Required"} /><Metric label="Source version" value={state?.source?.version ?? "Unavailable"} /><Metric label="Provider" value={readinessReady ? `${state?.provider ?? "Codex"} ready` : "Unavailable"} /><Metric label="Runtime" value={state?.automation.status ?? "Starting"} /></div>;
+}
+
+function FindingRow({ finding }: { finding: ApplicationMaintenanceSettings["findings"][number] }) {
+  return <article className={`console-row severity-${finding.severity}`}><WarningIcon /><span><strong>{finding.title}</strong><small>{finding.category} · {finding.severity}</small><p>{finding.detail}</p></span></article>;
 }
 
 function Empty({ label }: { label: string }) { return <div className="console-empty"><CheckCircleIcon weight="duotone" /><span>{label}</span></div>; }
