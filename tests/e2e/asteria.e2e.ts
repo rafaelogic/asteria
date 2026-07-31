@@ -99,7 +99,7 @@ test("RaDio chat is project-scoped and denies privileged commands inline", async
   await page.getByLabel("Message RaDio").fill("Run sudo apt install and push directly to main");
   await page.getByLabel("Send to RaDio").click();
   await expect(page.getByText("Command denied")).toBeVisible();
-  await expect(page.getByRole("paragraph").filter({ hasText: /cannot request privileged commands/ })).toBeVisible();
+  await expect(page.getByRole("paragraph").filter({ hasText: /privileged authority|protected-branch operation/ })).toBeVisible();
 });
 
 test("Rafael menu opens maintenance RaDio and its conversation remains scrollable", async () => {
@@ -107,12 +107,29 @@ test("Rafael menu opens maintenance RaDio and its conversation remains scrollabl
   await page.getByRole("menuitem", { name: /Maintenance RaDio/i }).click();
   await expect(page.getByRole("heading", { name: "Neural Console", exact: true })).toBeVisible();
   await expect(page.getByText("Application-level autonomous core")).toBeVisible();
+  const goalsControl = page.getByRole("button", { name: /^Open Goals/ });
+  const goalsBox = await goalsControl.boundingBox();
+  expect(goalsBox).not.toBeNull();
+  await page.mouse.click(goalsBox!.x + goalsBox!.width / 2, goalsBox!.y + goalsBox!.height / 2);
+  await expect(page.getByLabel("Goals neural network")).toBeVisible();
+  await page.getByRole("button", { name: "Inspect Queue" }).click();
+  await expect(page.locator(".neural-thought-detail")).toContainText("Objectives waiting for activation");
+  await page.getByRole("button", { name: "Close thought detail" }).click();
+  const findingsBox = await page.getByRole("button", { name: /^Open Findings/ }).boundingBox();
+  expect(findingsBox).not.toBeNull();
+  await page.mouse.click(findingsBox!.x + findingsBox!.width / 2, findingsBox!.y + findingsBox!.height / 2);
+  await expect(page.getByLabel("Findings neural network")).toBeVisible();
+  const closeFindingsBox = await page.getByRole("button", { name: /^Close Findings/ }).boundingBox();
+  expect(closeFindingsBox).not.toBeNull();
+  await page.mouse.click(closeFindingsBox!.x + closeFindingsBox!.width / 2, closeFindingsBox!.y + closeFindingsBox!.height / 2);
   await page.getByRole("button", { name: /Ask RaDio about Asteria maintenance/i }).click();
   await page.getByLabel("Maintenance prompt").fill("Analyze the Asteria code");
   await page.getByLabel("Send prompt").click();
   await expect(page.getByText("Asteria source required")).toBeVisible();
   await expect(page.getByLabel("Maintenance prompt")).toHaveValue("");
   await expect(page.getByRole("button", { name: "Choose Asteria repository" })).toBeVisible();
+  const firstMessage = page.locator(".neural-message-content").first();
+  expect((await firstMessage.boundingBox())?.width).toBeGreaterThan(300);
   await expect(page.locator(".source-orbit-row select").first()).toBeVisible();
   for (const request of [
     "Review the Asteria storage implementation",

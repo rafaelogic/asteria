@@ -291,7 +291,16 @@ export class ProviderManager extends EventEmitter {
     this.sessions.set(sessionId, process);
     this.sessionProviders.set(sessionId, "codex");
     let buffer = "";
-    const send = (value: unknown) => process.write(`${JSON.stringify(value)}\n`);
+    let ended = false;
+    const send = (value: unknown) => {
+      if (ended || !this.sessions.has(sessionId)) return false;
+      try { process.write(`${JSON.stringify(value)}\n`); return true; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EPIPE") throw error;
+        ended = true;
+        return false;
+      }
+    };
     send({ id: 1, method: "initialize", params: { clientInfo: { name: "asteria", title: "Asteria", version: "0.15.0" }, capabilities: { experimentalApi: true, requestAttestation: false } } });
     process.onData((chunk) => {
       buffer += chunk.replace(/\r\n/g, "\n");
@@ -327,6 +336,7 @@ export class ProviderManager extends EventEmitter {
           if (message.method === "turn/completed") {
             this.completedAppServerSessions.add(sessionId);
             this.emit("event", sessionId, { id: randomUUID(), type: "completed", timestamp: new Date().toISOString(), title: "Run completed", detail: "Codex app-server turn completed." });
+            ended = true;
             process.kill();
             continue;
           }
@@ -337,6 +347,7 @@ export class ProviderManager extends EventEmitter {
       }
     });
     process.onExit(({ exitCode }) => {
+      ended = true;
       this.sessions.delete(sessionId);
       this.sessionProviders.delete(sessionId);
       this.approvalRequestIds.delete(sessionId);

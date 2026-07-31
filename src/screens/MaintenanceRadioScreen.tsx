@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ActivityIcon, ArrowLeftIcon, ArrowUpIcon, BrainIcon, CheckCircleIcon, CoffeeIcon, FolderOpenIcon,
   GitBranchIcon, MagicWandIcon, PauseIcon, PlayIcon, RobotIcon, SlidersHorizontalIcon, StopCircleIcon,
@@ -21,6 +21,19 @@ const panels: Array<{ id: MaintenancePanel; label: string; icon: typeof TargetIc
   { id: "staging", label: "Staging", icon: GitBranchIcon },
   { id: "automation", label: "Automation", icon: SlidersHorizontalIcon },
 ];
+
+const radialPositions: Record<MaintenancePanel, { x: string; y: string }> = {
+  goals: { x: "32%", y: "55%" }, activity: { x: "46%", y: "24%" }, findings: { x: "64%", y: "39%" },
+  staging: { x: "64%", y: "68%" }, automation: { x: "46%", y: "79%" },
+};
+
+const neuralNodes: Record<MaintenancePanel, Array<{ label: string; detail: string }>> = {
+  goals: [{ label: "Queue", detail: "Objectives waiting for activation" }, { label: "Active", detail: "Current ownership and execution" }, { label: "Resolved", detail: "Completed objective evidence" }],
+  activity: [{ label: "Current pulse", detail: "What RaDio is doing now" }, { label: "Relay", detail: "Provider and Star ownership" }, { label: "Recent stream", detail: "Latest operational events" }],
+  findings: [{ label: "Alerts", detail: "Unresolved application findings" }, { label: "Evidence", detail: "Observed and verified signals" }, { label: "Diagnosis", detail: "Likely causes and next checks" }],
+  staging: [{ label: "Branches", detail: "Isolated change locations" }, { label: "Verification", detail: "Checks attached to revisions" }, { label: "Promotion", detail: "Release readiness and blockers" }],
+  automation: [{ label: "Cycle", detail: "Inspection cadence and state" }, { label: "Authority", detail: "Execution and approval boundaries" }, { label: "Runtime", detail: "Source, Relay, and installation" }],
+};
 
 export function improveMaintenancePrompt(value: string) {
   const clean = value.trim().replace(/\s+/g, " ");
@@ -67,6 +80,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
   const [install, setInstall] = useState<UserInstallState>({ rollbackReady: false });
   const [state, setState] = useState<ApplicationMaintenanceSettings>();
   const [panel, setPanel] = useState<MaintenancePanel>();
+  const [selectedNode, setSelectedNode] = useState<number>();
   const [chatOpen, setChatOpen] = useState(false);
   const [body, setBody] = useState("");
   const [selectedOrbit, setSelectedOrbit] = useState("");
@@ -120,10 +134,25 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
 
   const choosePanel = async (next?: MaintenancePanel, push = true) => {
     setPanel(next);
+    setSelectedNode(undefined);
     if (push) window.history.pushState({ ...(window.history.state ?? {}), radioPanel: next }, "");
     if (window.asteria && state) {
-      try { setState(await window.asteria.maintenance.selectPanel({ expectedVersion: state.version, idempotencyKey: `panel_${crypto.randomUUID()}`, panel: next })); } catch { /* subscription will reconcile */ }
+      try {
+        const latest = await window.asteria.maintenance.state();
+        setState(await window.asteria.maintenance.selectPanel({ expectedVersion: latest.version, idempotencyKey: `panel_${crypto.randomUUID()}`, panel: next }));
+      } catch (value) {
+        setError(value instanceof Error ? value.message : `The ${next ?? "console"} panel could not be opened.`);
+      }
     }
+  };
+  const handleStageClick = (event: ReactMouseEvent<HTMLElement>) => {
+    if (event.target !== event.currentTarget) return;
+    const control = [...event.currentTarget.querySelectorAll<HTMLButtonElement>(".radial-controls button")].find((button) => {
+      const bounds = button.getBoundingClientRect();
+      return event.clientX >= bounds.left && event.clientX <= bounds.right && event.clientY >= bounds.top && event.clientY <= bounds.bottom;
+    });
+    const next = control?.dataset.panel as MaintenancePanel | undefined;
+    if (next) void choosePanel(panel === next ? undefined : next);
   };
   const control = async (action: "run" | "pause" | "resume" | "emergency-stop" | "toggle-auto-install") => {
     if (!window.asteria || !state) return;
@@ -160,7 +189,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
       <div className="neural-top-actions"><button className="button secondary" onClick={onReturn}><ArrowLeftIcon /> All projects</button><button className="icon-control" aria-label={state?.automation.paused ? "Resume automation" : "Pause automation"} title={state?.automation.paused ? "Resume automation" : "Pause automation"} onClick={() => void control(state?.automation.paused ? "resume" : "pause")}>{state?.automation.paused ? <PlayIcon /> : <PauseIcon />}</button><button className="icon-control danger" aria-label="Emergency stop" title="Emergency stop" onClick={() => void control("emergency-stop")}><StopCircleIcon /></button></div>
     </header>
 
-    <main className="neural-stage">
+    <main className="neural-stage" onClick={handleStageClick}>
       <div className="neural-heading"><span className="eyebrow">Application-level autonomous core</span><h1>Neural Console</h1><p>{activeGoal ? activeGoal.currentAction : state?.automation.idleStatus ?? "Initializing local inspection"}</p></div>
       <NeuralBrain state={state} theme={theme} target={operationalTarget} />
       <AnimatePresence>{isWorking && <motion.button className="activity-thought" aria-label="Open live activity" onClick={() => void choosePanel("activity")} initial={{ opacity: 0, scale: .75, x: -20, y: 12 }} animate={{ opacity: 1, scale: 1, x: 0, y: 0 }} exit={{ opacity: 0, scale: .82, x: -12 }} transition={{ type: "spring", stiffness: 240, damping: 20 }}>
@@ -172,26 +201,32 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
       <nav className="radial-controls" aria-label="RaDio console sections">{panels.map(({ id, label, icon: Icon }, index) => {
         const selected = panel === id;
         const operational = operationalTarget === id;
-        return <button key={id} style={{ "--slot": index } as CSSProperties} className={`radial-${id}${selected ? " active" : ""}${operational ? " operational" : ""}`} onClick={() => void choosePanel(selected ? undefined : id)} aria-label={`${selected ? "Close" : "Open"} ${label}${operational ? ", current operational target" : ""}`} aria-expanded={selected} aria-pressed={selected} title={label}>
+        const position = radialPositions[id];
+        return <button key={id} data-panel={id} style={{ "--slot": index, "--x": position.x, "--y": position.y } as CSSProperties} className={`radial-${id}${selected ? " active" : ""}${operational ? " operational" : ""}`} onClick={() => void choosePanel(selected ? undefined : id)} aria-label={`${selected ? "Close" : "Open"} ${label}${operational ? ", current operational target" : ""}`} aria-expanded={selected} aria-pressed={selected} title={label}>
           <span className="radial-control-face"><span className="radial-control-icon"><Icon weight={selected || operational ? "fill" : "duotone"} /></span><span className="radial-control-label">{label}</span><i className="radial-active-marker" aria-hidden="true" /></span>
         </button>;
       })}</nav>
-      <AnimatePresence mode="wait">{panel && <motion.section key={panel} className={`radial-card card-${panel}`} initial={{ opacity: 0, scale: .94, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }} transition={{ type: "spring", stiffness: 310, damping: 28 }}>
-        <header><span>{panels.find((item) => item.id === panel)?.label}</span><button aria-label="Close panel" onClick={() => void choosePanel(undefined)}><XIcon /></button></header>
-        <div className="radial-card-body">
+      <AnimatePresence mode="wait">{panel && <motion.section key={panel} className={`neural-expansion expansion-${panel}`} aria-label={`${panels.find((item) => item.id === panel)?.label} neural network`} initial={{ opacity: 0, scale: .82 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: .88 }} transition={{ type: "spring", stiffness: 260, damping: 25 }}>
+        <svg className="neural-expansion-links" viewBox="0 0 420 250" aria-hidden="true"><path d="M38 125 C118 125 116 42 210 42 M38 125 C120 125 126 125 210 125 M38 125 C118 125 116 208 210 208" /></svg>
+        <div className="neural-expansion-origin"><BrainIcon weight="duotone" /><span>{panels.find((item) => item.id === panel)?.label}</span></div>
+        <div className="neural-expansion-nodes">{neuralNodes[panel].map((node, index) => <button key={node.label} className={selectedNode === index ? "selected" : ""} onClick={() => setSelectedNode(index)} aria-label={`Inspect ${node.label}`}><i /><span><strong>{node.label}</strong><small>{node.detail}</small></span></button>)}</div>
+        <AnimatePresence>{selectedNode !== undefined && <motion.aside className="neural-thought-detail" initial={{ opacity: 0, x: -16, scale: .94 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, x: -10 }}>
+          <header><span><small>Neural thought · {panels.find((item) => item.id === panel)?.label}</small><strong>{neuralNodes[panel][selectedNode].label}</strong><em>{neuralNodes[panel][selectedNode].detail}</em></span><button aria-label="Close thought detail" onClick={() => setSelectedNode(undefined)}><XIcon /></button></header>
+          <div className="radial-card-body">
           {panel === "goals" && <>{state?.goals.length ? state.goals.map((goal) => <article className="console-row" key={goal.id}><span><strong>{goal.title}</strong><small>P{goal.priority} · {goal.assignedStar} · {goal.status}</small><p>{goal.currentAction}</p></span><div>{goal.status === "blocked" && <button onClick={() => void goalAction(goal.id, "retry")}>Retry</button>}<button onClick={() => void goalAction(goal.id, "prioritize")}>Prioritize</button></div></article>) : <Empty label="No goals queued" />}</>}
           {panel === "activity" && <>{activeGoal ? <article className="activity-focus"><ActivityIcon /><span><small>Active Star · {activeGoal.assignedStar}</small><strong>{activeGoal.title}</strong><p>{activeGoal.currentAction}</p><b>{activeGoal.attempts}/3 attempts</b></span></article> : <Empty label="No active execution" />}{state?.chat.messages.slice(-5).reverse().map((message) => <article className="console-row" key={message.id}><span><strong>{message.author === "radio" ? "RaDio response" : "Owner prompt"}</strong><small>{message.status} · {new Date(message.createdAt).toLocaleTimeString()}</small></span></article>)}</>}
           {panel === "findings" && <>{state?.findings.length ? state.findings.map((finding) => <article className={`console-row severity-${finding.severity}`} key={finding.id}><WarningIcon /><span><strong>{finding.title}</strong><small>{finding.category} · {finding.severity}</small><p>{finding.detail}</p></span></article>) : <Empty label="No internal findings" />}</>}
           {panel === "staging" && <>{state?.goals.filter((goal) => goal.branch || goal.staging).length ? state.goals.filter((goal) => goal.branch || goal.staging).map((goal) => <article className="console-row" key={goal.id}><GitBranchIcon /><span><strong>{goal.branch ?? "Awaiting isolated branch"}</strong><small>{goal.staging?.status ?? goal.status}</small><p>{goal.staging?.detail ?? goal.currentAction}</p>{goal.commit && <code>{goal.commit.slice(0, 12)}</code>}</span></article>) : <Empty label="No staging promotions yet" />}</>}
           {panel === "automation" && <div className="automation-grid"><Metric label="Startup cycle" value={state?.automation.startupInspection ? "Enabled" : "Disabled"} /><Metric label="Schedule" value={`Every ${state?.automation.intervalMinutes ?? 30} min`} /><Metric label="Daily features" value={`${state?.automation.dailyFeatureLimit ?? 1} maximum`} /><Metric label="Self-install" value={state?.automation.autoInstall ? "Verified staging revisions" : "Disabled"} /><Metric label="Source binding" value={state?.source ? state.source.repository : "Required"} /><Metric label="Provider" value={readiness.ready ? `${state?.provider} ready` : "Unavailable"} /><button className="button secondary" onClick={() => void control("toggle-auto-install")}>{state?.automation.autoInstall ? "Disable self-install" : "Enable self-install"}</button><button className="button primary" disabled={!state?.source || state.automation.cycleRunning} onClick={() => void control("run")}><PlayIcon /> Run inspection now</button></div>}
-        </div>
+          </div>
+        </motion.aside>}</AnimatePresence>
       </motion.section>}</AnimatePresence>
     </main>
 
     <motion.section className={chatOpen ? "neural-chat open" : "neural-chat"} initial={false} animate={chatOpen ? { top: 92, left: "12vw", right: "12vw", bottom: 18, borderRadius: 20 } : { top: "calc(100% - 73px)", left: 22, right: 22, bottom: 18, borderRadius: 15 }} transition={{ type: "spring", stiffness: 210, damping: 28, mass: .9 }}>
       <AnimatePresence initial={false} mode="popLayout">{!chatOpen ? <motion.button key="launcher" className="prompt-launcher" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: .97 }} transition={{ duration: .16 }} onClick={() => { setChatOpen(true); window.setTimeout(() => promptRef.current?.focus(), 260); }}><BrainIcon weight="duotone" /><span>Ask RaDio about Asteria maintenance…</span><kbd>⌘ K</kbd></motion.button> : <motion.div key="conversation" className="neural-chat-expanded" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }} transition={{ delay: .1, duration: .24 }}>
         <header><div><RobotIcon weight="duotone" /><span><strong>Maintenance conversations</strong><small>Application scope · encrypted locally</small></span></div><select aria-label="Current conversation"><option>Current thread</option></select><button className="button secondary" onClick={() => setBody("")}>New conversation</button><button className="icon-control" aria-label="Collapse conversation" onClick={() => setChatOpen(false)}><XIcon /></button></header>
-        <div className="neural-messages" ref={messagesRef} onScroll={handleMessagesScroll}>{state?.chat.messages.map((message) => <article key={message.id} className={message.author}><span>{message.author === "radio" ? <RobotIcon /> : "You"}</span><div><header><strong>{message.author === "radio" ? "RaDio" : "You"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MaintenanceMarkdown content={message.body} fallbackLabel="Showing plain response" />}{message.status === "streaming" && <><ResponseActivity hasContent={Boolean(message.body)} /><button className="text-button" onClick={() => state && void window.asteria?.maintenance.cancel({ expectedVersion: state.version, idempotencyKey: `cancel_${crypto.randomUUID()}`, messageId: message.id })}><StopCircleIcon /> Stop</button></>}{message.status === "waiting_for_source" && <div className="source-required-card"><FolderOpenIcon /><div><strong>Asteria source required</strong><p>Changes run only in an isolated internal worktree.</p><button className="button primary" onClick={() => void selectSource("folder")}>Choose Asteria repository</button>{localOrbits.length > 0 && <div className="source-orbit-row"><select value={selectedOrbit} onChange={(event) => setSelectedOrbit(event.target.value)}><option value="">Choose local Orbit…</option>{localOrbits.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><button disabled={!selectedOrbit} onClick={() => void selectSource("orbit")}>Use Orbit</button></div>}</div></div>}</div></article>)}</div>
+        <div className="neural-messages" ref={messagesRef} onScroll={handleMessagesScroll}>{state?.chat.messages.map((message) => <article key={message.id} className={message.author}><span>{message.author === "radio" ? <RobotIcon /> : "You"}</span><div className="neural-message-content"><header><strong>{message.author === "radio" ? "RaDio" : "You"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MaintenanceMarkdown content={message.body} fallbackLabel="Showing plain response" />}{message.status === "streaming" && <><ResponseActivity hasContent={Boolean(message.body)} /><button className="text-button" onClick={() => state && void window.asteria?.maintenance.cancel({ expectedVersion: state.version, idempotencyKey: `cancel_${crypto.randomUUID()}`, messageId: message.id })}><StopCircleIcon /> Stop</button></>}{message.status === "waiting_for_source" && <div className="source-required-card"><FolderOpenIcon /><div><strong>Asteria source required</strong><p>Changes run only in an isolated internal worktree.</p><button className="button primary" onClick={() => void selectSource("folder")}>Choose Asteria repository</button>{localOrbits.length > 0 && <div className="source-orbit-row"><select value={selectedOrbit} onChange={(event) => setSelectedOrbit(event.target.value)}><option value="">Choose local Orbit…</option>{localOrbits.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><button disabled={!selectedOrbit} onClick={() => void selectSource("orbit")}>Use Orbit</button></div>}</div></div>}</div></article>)}</div>
         {error && <p className="radio-send-error" role="alert">{error}</p>}
         <footer><textarea ref={promptRef} aria-label="Maintenance prompt" value={body} onChange={(event) => setBody(event.target.value)} placeholder={readiness.ready ? "Ask, diagnose, or create a durable maintenance goal…" : "Provider unavailable; local inspection remains available"} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button className="icon-control improve" aria-label="Improve prompt" title="Improve prompt locally" onClick={() => setBody(improveMaintenancePrompt(body))}><MagicWandIcon /></button><button className="send-control" aria-label="Send prompt" disabled={!body.trim() || !readiness.ready || isStreaming} onClick={() => void send()}><ArrowUpIcon /></button></footer>
       </motion.div>}</AnimatePresence>

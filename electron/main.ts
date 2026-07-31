@@ -43,6 +43,14 @@ import {
 } from "../modules/radio/index.js";
 import type { ApplicationMaintenanceSettings, AuthorizationPermission, DeploymentRun, HealthFinding, NetworkApproval, NetworkRequest, Project, PromptManifestRecord, ReleaseEvidence, SpecialistRole } from "../src/types.js";
 import { StarsModule } from "../modules/stars/index.js";
+
+// Detached desktop launches can outlive their parent terminal. A closed log pipe
+// must not become a native main-process dialog or interrupt RaDio continuity.
+for (const stream of [process.stdout, process.stderr]) {
+  stream?.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EPIPE") process.exitCode = 1;
+  });
+}
 import {
   consumeAuthorization, createAuthorizationRequest, decideAuthorization, issueCapabilityLease, matchingGrant, validateCapabilityLease,
 } from "../modules/radio/shared/authorization.js";
