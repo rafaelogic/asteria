@@ -39,6 +39,14 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => { await application?.close(); });
 
+test("maintenance RaDio opens before any Starpath exists", async () => {
+  await expect(page.getByRole("heading", { name: "Prepare your Starpath" })).toBeVisible();
+  await page.getByRole("button", { name: "Maintenance RaDio" }).click();
+  await expect(page.getByRole("heading", { name: "Neural Console" })).toBeVisible();
+  await page.getByRole("button", { name: /All projects/i }).click();
+  await expect(page.getByRole("heading", { name: "Prepare your Starpath" })).toBeVisible();
+});
+
 test("first run creates an isolated project and primary controls remain usable", async () => {
   const nativeDialogs: string[] = [];
   page.on("dialog", async (dialog) => { nativeDialogs.push(dialog.type()); await dialog.dismiss(); });

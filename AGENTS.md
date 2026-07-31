@@ -71,3 +71,5 @@ Every repository change must bump Asteria’s version in both `package.json` and
 Maintenance RaDio must distinguish current execution gates from historical findings. Reopening the console or installing a newer verified healthy release must not leave the live core blocked by an older Waypoint; retain that evidence in Findings without presenting it as the current operational state.
 
 Neural Console connector lines must terminate on the actual rendered core, section control, and expanded panel at every supported window size; fixed design-canvas coordinates are not acceptable for responsive connectors.
+
+Maintenance RaDio is application-scoped and must remain directly accessible before any Orbit or Starpath exists. Entering and leaving it with zero projects must not create, select, or require project workflow state.

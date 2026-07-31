@@ -141,7 +141,24 @@ export function App() {
   }, [activeProject?.id, onboarded, screen]);
 
   if (loading) return <RecoveryState kind="loading" />;
-  if (!onboarded) return <OnboardingScreen existingProjectCount={projects.length} onCancel={projects.length ? cancelNewProject : undefined} onComplete={(project) => {
+  if (screen === "maintenance-radio") {
+    return (
+      <div className="maintenance-workspace">
+        <motion.main key={screen} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+          <MaintenanceRadioScreen projects={projects} onReturn={() => {
+            if (projects.length) navigate("projects");
+            else {
+              setScreen("workflow");
+              setOnboarded(false);
+              pushHistory("workflow", undefined, true, true);
+            }
+          }} />
+        </motion.main>
+        <AppDialog model={dialog} onClose={() => setDialog(null)} />
+      </div>
+    );
+  }
+  if (!onboarded) return <OnboardingScreen existingProjectCount={projects.length} onMaintenance={() => navigate("maintenance-radio")} onCancel={projects.length ? cancelNewProject : undefined} onComplete={(project) => {
     setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)]);
     setActiveProjectId(project.id);
     setOnboarded(true);
@@ -287,7 +304,6 @@ export function App() {
     if (screen === "projects") return <ProjectsScreen projects={projects} activeProjectId={activeProject.id} onOpen={selectProject} onNew={startNewProject} />;
     if (screen === "workflow") return <WorkflowScreen project={activeProject} provider={activeProject.provider} onProvider={changeProvider} paused={Boolean(pausedProjects[activeProject.id])} onPause={() => void togglePause()} onExecute={() => void executeStage()} onApproval={() => setApprovalProject(activeProject.id)} onBack={() => navigate("projects")} />;
     if (screen === "radio-chat") return <RadioChatScreen project={activeProject} onProject={replaceProject} />;
-    if (screen === "maintenance-radio") return <MaintenanceRadioScreen projects={projects} onReturn={() => navigate("projects")} />;
     if (screen === "ideas") return <IdeasScreen project={activeProject} onProject={replaceProject} />;
     if (screen === "kanban") return <KanbanScreen project={activeProject} onProject={replaceProject} />;
     if (screen === "threads") return <ThreadsScreen project={activeProject} onProject={replaceProject} />;
@@ -299,17 +315,6 @@ export function App() {
     if (screen === "privacy") return <PrivacyScreen auditCount={auditCount} onDialog={setDialog} />;
     return <SettingsScreen project={activeProject} onProject={replaceProject} />;
   })();
-
-  if (isApplicationWorkspace(screen)) {
-    return (
-      <div className="maintenance-workspace">
-        <motion.main key={screen} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-          {page}
-        </motion.main>
-        <AppDialog model={dialog} onClose={() => setDialog(null)} />
-      </div>
-    );
-  }
 
   return (
     <div className="app-shell">

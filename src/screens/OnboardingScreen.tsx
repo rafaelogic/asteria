@@ -38,10 +38,11 @@ const teamGroups: Array<{ number: string; title: string; detail: string; roles: 
   { number: "07", title: starForRole("security").title, detail: "Human-controlled ship · always on", roles: ["security"], required: true }
 ];
 
-export function OnboardingScreen({ onComplete, onExplore, onCancel, existingProjectCount = 0 }: {
+export function OnboardingScreen({ onComplete, onExplore, onCancel, onMaintenance, existingProjectCount = 0 }: {
   onComplete: (project: Project) => void;
   onExplore: () => void;
   onCancel?: () => void;
+  onMaintenance: () => void;
   existingProjectCount?: number;
 }) {
   const [draft, setDraft] = useState<OnboardingDraft>(() => {
@@ -212,6 +213,7 @@ export function OnboardingScreen({ onComplete, onExplore, onCancel, existingProj
         <Brand />
         <span className="onboarding-top-actions">
           <span><LockKeyIcon /> Local-first orchestration</span>
+          <button className="button ghost onboarding-maintenance" onClick={onMaintenance}><RobotIcon /> Maintenance RaDio</button>
           {onCancel && <button className="button ghost onboarding-exit" onClick={onCancel} aria-label="Cancel new project and return to projects"><XIcon /> Back to projects</button>}
         </span>
       </header>
