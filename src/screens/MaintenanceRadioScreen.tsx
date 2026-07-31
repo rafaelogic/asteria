@@ -61,6 +61,10 @@ function NeuralBrain({ state, theme, target }: { state?: ApplicationMaintenanceS
   return <div className={`neural-brain theme-${theme} state-${active}${working ? " working" : ""}${target ? ` signal-${target}` : ""}`} role="img" aria-label={`RaDio is ${active}${target ? `; neural signal targets ${target}` : ""}. ${state?.automation.idleStatus ?? "Waiting for application state."}`}>
     <svg viewBox="0 0 500 420" aria-hidden="true">
       <defs><filter id="neural-glow"><feGaussianBlur stdDeviation="5" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter></defs>
+      <g className="core-orbits">
+        <circle cx="250" cy="210" r="190" /><circle cx="250" cy="210" r="166" /><circle cx="250" cy="210" r="126" />
+        <path d="M250 20v18M250 382v18M60 210h18M422 210h18M116 76l13 13M371 331l13 13M116 344l13-13M371 89l13-13" />
+      </g>
       <g className="neural-links">
         {["70,210 140,120 245,90 360,125 430,215","70,210 145,300 250,330 365,295 430,215","140,120 175,205 245,90 330,210 360,125","145,300 175,205 250,330 330,210 365,295","175,205 250,150 330,210 250,270 175,205","250,90 250,150 250,270 250,330"].map((points) => <polyline key={points} points={points} />)}
       </g>
@@ -72,6 +76,7 @@ function NeuralBrain({ state, theme, target }: { state?: ApplicationMaintenanceS
         <path className="neural-signal-light" d={signalPaths[target]} />
       </g>}
     </svg>
+    <div className="neural-core-readout" aria-hidden="true"><small>RaDio core</small><strong>{active}</strong><span>{working ? "Live execution" : "System ready"}</span></div>
     {!working && active !== "failed" && <div className="coffee-break"><CoffeeIcon weight="duotone" /><span>{state?.automation.idleStatus ?? "Coffee break"}</span></div>}
   </div>;
 }
@@ -134,7 +139,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
 
   const choosePanel = async (next?: MaintenancePanel, push = true) => {
     setPanel(next);
-    setSelectedNode(undefined);
+    setSelectedNode(next ? 0 : undefined);
     if (push) window.history.pushState({ ...(window.history.state ?? {}), radioPanel: next }, "");
     if (window.asteria && state) {
       try {
@@ -191,6 +196,15 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
 
     <main className="neural-stage" onClick={handleStageClick}>
       <div className="neural-heading"><span className="eyebrow">Application-level autonomous core</span><h1>Neural Console</h1><p>{activeGoal ? activeGoal.currentAction : state?.automation.idleStatus ?? "Initializing local inspection"}</p></div>
+      <aside className="neural-hud-rail neural-mission-rail" aria-label="Current mission context">
+        <header><TargetIcon weight="duotone" /><span><small>Current directive</small><strong>{activeGoal?.title ?? "Maintain Asteria"}</strong></span><b>{activeGoal?.status ?? "ready"}</b></header>
+        <dl><div><dt>Active owner</dt><dd>{activeGoal?.assignedStar ?? "RaDio"}</dd></div><div><dt>Source binding</dt><dd>{state?.source?.repository ?? "Not selected"}</dd></div><div><dt>Goal queue</dt><dd>{state?.goals.length ?? 0} objectives</dd></div></dl>
+        <p>{activeGoal?.currentAction ?? state?.automation.idleStatus ?? "Waiting for application state."}</p>
+      </aside>
+      {!panel && <aside className="neural-hud-rail neural-system-rail" aria-label="System telemetry">
+        <header><ActivityIcon weight="duotone" /><span><small>System telemetry</small><strong>Local control plane</strong></span><b>{readiness.ready ? "online" : "limited"}</b></header>
+        <div className="neural-telemetry-grid"><Metric label="Relay" value={readiness.ready ? `${state?.provider ?? "Codex"} ready` : "Unavailable"} /><Metric label="Findings" value={`${state?.findings.length ?? 0} open`} /><Metric label="Cycle" value={state?.automation.cycleRunning ? "Running" : nextCycle} /><Metric label="Install" value={install.currentVersion ?? "dev"} /></div>
+      </aside>}
       <NeuralBrain state={state} theme={theme} target={operationalTarget} />
       <AnimatePresence>{isWorking && <motion.button className="activity-thought" aria-label="Open live activity" onClick={() => void choosePanel("activity")} initial={{ opacity: 0, scale: .75, x: -20, y: 12 }} animate={{ opacity: 1, scale: 1, x: 0, y: 0 }} exit={{ opacity: 0, scale: .82, x: -12 }} transition={{ type: "spring", stiffness: 240, damping: 20 }}>
         <i className="thought-tail tail-one" /><i className="thought-tail tail-two" />
@@ -206,7 +220,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
           <span className="radial-control-face"><span className="radial-control-icon"><Icon weight={selected || operational ? "fill" : "duotone"} /></span><span className="radial-control-label">{label}</span><i className="radial-active-marker" aria-hidden="true" /></span>
         </button>;
       })}</nav>
-      <AnimatePresence mode="wait">{panel && <motion.section key={panel} className={`neural-expansion expansion-${panel}`} aria-label={`${panels.find((item) => item.id === panel)?.label} neural network`} initial={{ opacity: 0, scale: .82 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: .88 }} transition={{ type: "spring", stiffness: 260, damping: 25 }}>
+      <AnimatePresence mode="wait">{panel && <motion.section key={panel} className={`neural-expansion expansion-${panel}`} aria-label={`${panels.find((item) => item.id === panel)?.label} neural network`} initial={{ opacity: 0, x: 28, scale: .96 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, x: 18, scale: .97 }} transition={{ type: "spring", stiffness: 260, damping: 25 }}>
         <svg className="neural-expansion-links" viewBox="0 0 420 250" aria-hidden="true"><path d="M38 125 C118 125 116 42 210 42 M38 125 C120 125 126 125 210 125 M38 125 C118 125 116 208 210 208" /></svg>
         <div className="neural-expansion-origin"><BrainIcon weight="duotone" /><span>{panels.find((item) => item.id === panel)?.label}</span></div>
         <div className="neural-expansion-nodes">{neuralNodes[panel].map((node, index) => <button key={node.label} className={selectedNode === index ? "selected" : ""} onClick={() => setSelectedNode(index)} aria-label={`Inspect ${node.label}`}><i /><span><strong>{node.label}</strong><small>{node.detail}</small></span></button>)}</div>
