@@ -33,4 +33,11 @@ describe("maintenance self-update continuation", () => {
     expect(resumed.goals[0].install?.status).toBe("blocked");
     expect(resumed.goals[0].blocker).toContain("Expected healthy Asteria 0.12.0");
   });
+
+  it("accepts a newer verified healthy release without retaining a stale block", () => {
+    const resumed = reconcileMaintenanceRelaunch(state, { currentVersion: "0.16.5", rollbackReady: true, manifest: { schemaVersion: 1, version: "0.16.5", commit: "newer", sourceDigest: "newer", artifactDigest: "digest", checks: [], createdAt: "" }, health: { storage: true, providers: true, skills: true, renderer: true, consoleErrors: [], heartbeat: true, checkedAt: "" } }, "now");
+    expect(resumed.automation.status).toBe("idle");
+    expect(resumed.goals[0].status).toBe("completed");
+    expect(resumed.goals[0].currentAction).toContain("Superseded by verified Asteria 0.16.5");
+  });
 });

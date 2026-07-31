@@ -112,11 +112,9 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
           : activeGoal?.status === "queued"
             ? "goals"
             : undefined;
-  const issueGoal = activeGoal && ["blocked", "failed"].includes(activeGoal.status)
-    ? activeGoal
-    : state?.goals.find((goal) => ["blocked", "failed"].includes(goal.status));
-  const issueFinding = state?.findings.find((finding) => ["critical", "error"].includes(finding.severity));
-  const hasIssue = Boolean(state?.automation.emergencyStopped || ["blocked", "failed"].includes(operationalState) || issueGoal || issueFinding);
+  const issueGoal = activeGoal && ["blocked", "failed"].includes(activeGoal.status) ? activeGoal : undefined;
+  const issueFinding = issueGoal ? state?.findings.find((finding) => finding.goalId === issueGoal.id && ["critical", "error"].includes(finding.severity)) : undefined;
+  const hasIssue = Boolean(state?.automation.emergencyStopped || ["blocked", "failed"].includes(operationalState) || issueGoal);
   const issueReason = state?.automation.emergencyStopped
     ? "Emergency stop is active. Resume only after reviewing the interrupted operation."
     : issueGoal?.blocker ?? issueGoal?.currentAction ?? issueFinding?.detail ?? error;
