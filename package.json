@@ -1,6 +1,6 @@
 {
   "name": "asteria",
-  "version": "0.12.5",
+  "version": "0.14.1",
   "private": true,
   "description": "Privacy-hardened desktop control plane for autonomous software delivery",
   "desktopName": "asteria.desktop",
@@ -81,6 +81,7 @@
     "files": [
       "dist/client/**/*",
       "dist-electron/**/*",
+      "modules/**/*.md",
       "runtime/privacy-audit.json",
       "build/icon.png",
       "package.json"

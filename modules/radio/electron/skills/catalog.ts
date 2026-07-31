@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { RiskClassification, SkillCapability, SkillManifest, SkillPermission, SpecialistRole } from "../../../src/types.js";
+import type { RiskClassification, SkillCapability, SkillManifest, SkillPermission, SpecialistRole } from "../../../../src/types.js";
 
 type Definition = {
   id: string; name: string; description: string; roles: SpecialistRole[]; coordinates: string[];

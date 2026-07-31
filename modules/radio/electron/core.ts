@@ -1,12 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { IdeaProposal, Project, RaDioSettings, SpecialistRole } from "../../src/types.js";
-import { RADIO_GOVERNING_PROMPT, radioPolicyDecision, selectRaDioAccount } from "../../src/radio.js";
+import type { IdeaProposal, Project, RaDioSettings, SpecialistRole } from "../../../src/types.js";
+import { radioPolicyDecision, selectRaDioAccount } from "../shared/core.js";
 import type { RaDioAccountVault } from "./account-vault.js";
 
 export class RaDioCore {
   constructor(private accounts: RaDioAccountVault) {}
 
-  governingPrompt() { return RADIO_GOVERNING_PROMPT; }
   policy = radioPolicyDecision;
 
   selectAccount(project: Project, role: SpecialistRole, capabilities: string[], currentProvider?: "codex" | "claude") {

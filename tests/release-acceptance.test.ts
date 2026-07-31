@@ -17,11 +17,13 @@ describe("release acceptance gates", () => {
   it("routes trusted-host GitHub operations through the encrypted app credential", () => {
     const git = readFileSync("electron/git.ts", "utf8");
     const main = readFileSync("electron/main.ts", "utf8");
+    const safety = readFileSync("modules/radio/directives/safety.md", "utf8");
     expect(git).toContain('GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader"');
     expect(git).toContain("GIT_CONFIG_VALUE_0: `Authorization: Bearer ${gitHubToken}`");
     expect(main).toContain("promoteFastForwardToStaging(app.getPath");
     expect(main).toContain("getGitHubToken()");
-    expect(main).toContain("Never run git add, commit, fetch, push");
+    expect(main).toContain("The trusted host owns Git checkpointing");
+    expect(safety).toContain("push directly to main or master");
   });
   it("packages the Asteria identity and a concrete Linux icon source", () => {
     expect(manifest.build.appId).toBe("dev.asteria.desktop");
@@ -63,13 +65,13 @@ describe("release acceptance gates", () => {
     expect(installer).toContain("launchKnownGood()");
   });
   it("bootstraps exact-revision dependencies before self-install verification", () => {
-    const installer = readFileSync("electron/radio/user-installer.ts", "utf8");
+    const installer = readFileSync("modules/radio/electron/user-installer.ts", "utf8");
     expect(installer).toContain('await runInRepository(root, "npm", ["ci", "--prefer-offline", "--no-audit"])');
     expect(installer).toContain("await bootstrapAsteriaDependencies(root)");
     expect(installer.indexOf("await bootstrapAsteriaDependencies(root)")).toBeLessThan(installer.indexOf('await run("npm", ["run", "typecheck"])'));
   });
   it("builds an isolated production client before starting host preview", () => {
-    const installer = readFileSync("electron/radio/user-installer.ts", "utf8");
+    const installer = readFileSync("modules/radio/electron/user-installer.ts", "utf8");
     const main = readFileSync("electron/main.ts", "utf8");
     expect(installer).toContain('await runInRepository(root, "npm", ["run", "build:web"])');
     expect(main).toContain("await prepareAsteriaPreview(workspace)");

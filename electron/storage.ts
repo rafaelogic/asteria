@@ -5,8 +5,9 @@ import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync, readFile
 import path from "node:path";
 import type { ApplicationMaintenanceSettings, OnboardingDraft, Project, RaDioMemoryEntry, SkillExecution, TelemetryEvent, TelemetryPolicy, TelemetrySummary } from "../src/types.js";
 import { PRODUCTION_WORKFLOW, recommendedRoles, transitionWorkflow } from "../src/workflow.js";
-import { DEFAULT_RADIO_SETTINGS } from "../src/radio.js";
-import { defaultTakeover } from "./radio/supervisor.js";
+import { DEFAULT_RADIO_SETTINGS } from "../modules/radio/shared/core.js";
+import { emptyStarContinuity, normalizeStarContinuity, starForRole } from "../modules/stars/shared/catalog.js";
+import { defaultTakeover } from "../modules/radio/electron/supervisor.js";
 import { ensurePrivateDirectory, ensurePrivateFile } from "./file-permissions.js";
 
 export interface AsteriaStore {
@@ -229,6 +230,8 @@ export class ProjectRepository {
       ideas: project.ideas ?? [], accountTransitions: project.accountTransitions ?? [], radioReports: project.radioReports ?? []
       ,skillExecutions: project.skillExecutions ?? [], incidents: project.incidents ?? [],
       takeover: project.takeover ?? defaultTakeover(project.id, project.runId, project.radio?.mode === "full_autonomous"),
+      starContinuity: normalizeStarContinuity(project),
+      aiExecutions: (project.aiExecutions ?? []).slice(0, 500),
       radioChats: project.radioChats ?? [{ id: randomUUID(), projectId: project.id, runId: project.runId, archived: false, messages: [], createdAt: project.createdAt, updatedAt: project.updatedAt }]
     };
   }
@@ -254,12 +257,14 @@ export class ProjectRepository {
       constraints: draft.constraints,
       visibility: draft.githubConnected ? "Private" : "Local",
       provider: draft.defaultProvider,
+      starContinuity: emptyStarContinuity(id),
+      aiExecutions: [],
       runId,
       runStatus: "active",
       workflow,
       currentAction: {
         title: "Defining product outcomes",
-        detail: "Product Planner is turning the idea into traceable requirements and acceptance criteria.",
+        detail: `${starForRole("planner").title} is turning the idea into traceable requirements and acceptance criteria.`,
         milestone: "Product definition",
         tool: "RaDio Planner",
         elapsed: "00:00:00",

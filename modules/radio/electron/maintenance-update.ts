@@ -1,4 +1,4 @@
-import type { ApplicationMaintenanceSettings, UserInstallState } from "../../src/types.js";
+import type { ApplicationMaintenanceSettings, UserInstallState } from "../../../src/types.js";
 
 export function reconcileMaintenanceRelaunch(
   state: ApplicationMaintenanceSettings,

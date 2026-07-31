@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { ProviderAccountProfile, ProviderId, SpecialistRole } from "../../src/types.js";
-import { ensurePrivateDirectory, ensurePrivateFile } from "../file-permissions.js";
+import type { ProviderAccountProfile, ProviderId, SpecialistRole } from "../../../src/types.js";
+import { ensurePrivateDirectory, ensurePrivateFile } from "../../../electron/file-permissions.js";
 
 type Encrypt = (value: string) => Buffer;
 type Decrypt = (value: Buffer) => string;

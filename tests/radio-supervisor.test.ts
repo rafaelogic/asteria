@@ -2,14 +2,14 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { inspectAttachment, revalidateAttachment } from "../electron/radio/attachments";
+import { inspectAttachment, revalidateAttachment } from "../modules/radio/electron/attachments";
 import {
   classifyChatCommand,
   classifyHealth,
   decideChatCommand,
   healthFingerprint,
   recordIncident,
-} from "../electron/radio/supervisor";
+} from "../modules/radio/electron/supervisor";
 import { projects } from "../src/data";
 
 describe("RaDio supervisor", () => {

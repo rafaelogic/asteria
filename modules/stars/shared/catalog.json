@@ -1,0 +1,16 @@
+[
+  {"id":"planner","title":"Product Planner","capabilities":["research","planning","requirements"],"coordinates":["Define","Scope gate","Requirements","Close"]},
+  {"id":"product_designer","title":"Product Design Star","capabilities":["product-design","research","prototyping"],"coordinates":["Design"]},
+  {"id":"ui_designer","title":"UI Design Star","capabilities":["ui-design","prototyping","responsive-design"],"coordinates":["Design","Frontend"]},
+  {"id":"architect","title":"Technical Architect","capabilities":["architecture","interfaces","risk-analysis"],"coordinates":["Architect"],"incidentCategories":["unknown"]},
+  {"id":"frontend","title":"Frontend Developer","capabilities":["frontend","tests","accessibility"],"coordinates":["Frontend"],"incidentCategories":["renderer"]},
+  {"id":"backend","title":"Backend Developer","capabilities":["backend","interfaces","tests"],"coordinates":["Backend"],"incidentCategories":["electron"]},
+  {"id":"database","title":"Database Star","capabilities":["database","migrations","integrity"],"coordinates":["Architect","Backend","Audit"],"incidentCategories":["storage"]},
+  {"id":"devops","title":"DevOps Engineer","capabilities":["build","deployment","observability"],"coordinates":["DevOps","Release gate","Deploy"],"incidentCategories":["provider","build","packaging","startup"]},
+  {"id":"integrator","title":"Integration Developer","capabilities":["integration","git","tests"],"coordinates":["Integrate"],"incidentCategories":["tool","git"]},
+  {"id":"reviewer","title":"Staff Reviewer","capabilities":["review","risk-analysis","requirements"],"coordinates":["Review"]},
+  {"id":"qa","title":"QA Engineer","capabilities":["tests","browser","regression"],"coordinates":["QA","Verify"],"incidentCategories":["test"]},
+  {"id":"security","title":"Security and Privacy Star","capabilities":["security","privacy","threat-modeling"],"coordinates":["Release audit","Audit"],"incidentCategories":["security"]},
+  {"id":"accessibility","title":"Accessibility Star","capabilities":["accessibility","browser","tests"],"coordinates":["Design","Frontend","QA"]},
+  {"id":"performance","title":"Performance Star","capabilities":["performance","profiling","observability"],"coordinates":["Frontend","Backend","QA"]}
+]

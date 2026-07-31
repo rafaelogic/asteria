@@ -1,21 +1,22 @@
 import type { Project, ProviderId, SpecialistRole, WorkflowStep } from "./types.js";
+import { providerForStar, starForRole } from "../modules/stars/shared/catalog.js";
 
 export const PRODUCTION_WORKFLOW: WorkflowStep[] = [
-  { id: "define", name: "Define", specialist: "Product Planner", role: "planner", status: "active", required: true },
-  { id: "design", name: "Design", specialist: "Product + UI Design", role: "product_designer", status: "pending", required: true },
-  { id: "architect", name: "Architect", specialist: "Technical Architect", role: "architect", status: "pending", required: true },
+  { id: "define", name: "Define", specialist: starForRole("planner").title, role: "planner", status: "active", required: true },
+  { id: "design", name: "Design", specialist: starForRole("product_designer").title, role: "product_designer", status: "pending", required: true },
+  { id: "architect", name: "Architect", specialist: starForRole("architect").title, role: "architect", status: "pending", required: true },
   { id: "scope", name: "Scope gate", specialist: "Human approval", role: "planner", status: "pending", required: true },
-  { id: "frontend", name: "Frontend", specialist: "Frontend Developer", role: "frontend", status: "pending", parallelGroup: "build" },
-  { id: "backend", name: "Backend", specialist: "Backend Developer", role: "backend", status: "pending", parallelGroup: "build" },
-  { id: "devops", name: "DevOps", specialist: "DevOps Engineer", role: "devops", status: "pending", parallelGroup: "build" },
-  { id: "integrate", name: "Integrate", specialist: "Integration Developer", role: "integrator", status: "pending", required: true },
-  { id: "review", name: "Review", specialist: "Staff Reviewer", role: "reviewer", status: "pending", required: true, attempt: 1 },
-  { id: "qa", name: "QA", specialist: "QA Engineer", role: "qa", status: "pending", required: true, attempt: 1 },
-  { id: "security", name: "Release audit", specialist: "Security + Privacy", role: "security", status: "pending", required: true },
-  { id: "requirements", name: "Requirements", specialist: "Product Planner", role: "planner", status: "pending", required: true },
+  { id: "frontend", name: "Frontend", specialist: starForRole("frontend").title, role: "frontend", status: "pending", parallelGroup: "build" },
+  { id: "backend", name: "Backend", specialist: starForRole("backend").title, role: "backend", status: "pending", parallelGroup: "build" },
+  { id: "devops", name: "DevOps", specialist: starForRole("devops").title, role: "devops", status: "pending", parallelGroup: "build" },
+  { id: "integrate", name: "Integrate", specialist: starForRole("integrator").title, role: "integrator", status: "pending", required: true },
+  { id: "review", name: "Review", specialist: starForRole("reviewer").title, role: "reviewer", status: "pending", required: true, attempt: 1 },
+  { id: "qa", name: "QA", specialist: starForRole("qa").title, role: "qa", status: "pending", required: true, attempt: 1 },
+  { id: "security", name: "Release audit", specialist: starForRole("security").title, role: "security", status: "pending", required: true },
+  { id: "requirements", name: "Requirements", specialist: starForRole("planner").title, role: "planner", status: "pending", required: true },
   { id: "release", name: "Release gate", specialist: "Human approval", role: "devops", status: "pending", required: true },
-  { id: "deploy", name: "Deploy", specialist: "DevOps Engineer", role: "devops", status: "pending", required: true },
-  { id: "verify", name: "Verify", specialist: "QA Engineer", role: "qa", status: "pending", required: true },
+  { id: "deploy", name: "Deploy", specialist: starForRole("devops").title, role: "devops", status: "pending", required: true },
+  { id: "verify", name: "Verify", specialist: starForRole("qa").title, role: "qa", status: "pending", required: true },
   { id: "close", name: "Close", specialist: "Human + Planner", role: "planner", status: "pending", required: true }
 ];
 
@@ -85,5 +86,5 @@ export function transitionWorkflow(project: Project, event: "complete" | "fail_r
 }
 
 export function providerForRole(project: Pick<Project, "provider" | "roleProviders">, role: SpecialistRole): ProviderId {
-  return project.roleProviders?.[role] ?? project.provider;
+  return providerForStar(project, role);
 }

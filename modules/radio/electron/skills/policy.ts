@@ -1,6 +1,6 @@
 import path from "node:path";
-import type { Project, SkillManifest, SkillPolicyDecision } from "../../../src/types.js";
-import { radioPolicyDecision } from "../../../src/radio.js";
+import type { Project, SkillManifest, SkillPolicyDecision } from "../../../../src/types.js";
+import { radioPolicyDecision } from "../../shared/core.js";
 
 export interface AdapterInvocation {
   operationId: string;

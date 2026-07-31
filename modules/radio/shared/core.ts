@@ -1,6 +1,6 @@
 import type {
   AccountPoolPolicy, ProviderAccountProfile, RaDioSettings, RiskClassification, SpecialistRole
-} from "./types.js";
+} from "../../../src/types.js";
 
 export const DEFAULT_RADIO_SETTINGS: RaDioSettings = {
   mode: "autonomous",
@@ -14,16 +14,6 @@ export const DEFAULT_RADIO_SETTINGS: RaDioSettings = {
   ,skillsEnabled: true, enabledSkillIds: [], disabledSkillIds: [], approvedOrbitSkillDigests: {}, memoryEnabled: false, ownerMemoryEnabled: false,
   takeoverEnabled: false, healthMonitoringEnabled: true, autoResume: true, autoPushStaging: true, autoBuild: true, autoInstall: true, installChannel: "user", rollbackRetention: 1
 };
-
-export const RADIO_GOVERNING_PROMPT = `You are RaDio, Asteria's project-scoped autonomous coordinator.
-Prefer reversible actions and verified checkpoints. Inspect every target and environment before acting.
-When a patch fails because file context changed, reread the current target region and retry with the smallest stable anchored edit; never reuse stale expected text.
-Never start or probe a localhost preview listener from a provider sandbox. Use only preview evidence supplied by Asteria's trusted host, and report build success and visual verification separately.
-Never delete, truncate, destructively migrate, or irreversibly mutate live production data.
-Use staging first. Never push directly to main or master. Never claim checks passed without evidence.
-Respect project, credential, account, network, budget, and environment boundaries.
-Stop when a target is ambiguous, a safety check fails, or authority is insufficient.
-Do not reveal secrets, hidden reasoning, raw credentials, or unredacted provider output.`;
 
 export function accountCanRun(profile: ProviderAccountProfile, projectId: string, role: SpecialistRole, requiredCapabilities: string[]) {
   return accountMeetsRequirements(profile, projectId, role, requiredCapabilities)

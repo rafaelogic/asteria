@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { Project, SkillExecution, SkillManifest, SkillPolicyDecision, SpecialistRole } from "../../../src/types.js";
-import { radioPolicyDecision } from "../../../src/radio.js";
+import type { Project, SkillExecution, SkillManifest, SkillPolicyDecision, SpecialistRole } from "../../../../src/types.js";
+import { radioPolicyDecision } from "../../shared/core.js";
 import { SkillRegistry } from "./registry.js";
 import { validateAdapterInvocation } from "./policy.js";
 

@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { SkillRegistry } from "../electron/radio/skills/registry";
-import { SkillRuntime } from "../electron/radio/skills/runtime";
-import { DEFAULT_RADIO_SETTINGS } from "../src/radio";
-import { validateAdapterInvocation } from "../electron/radio/skills/policy";
+import { SkillRegistry } from "../modules/radio/electron/skills/registry";
+import { SkillRuntime } from "../modules/radio/electron/skills/runtime";
+import { DEFAULT_RADIO_SETTINGS } from "../modules/radio/shared/core";
+import { validateAdapterInvocation } from "../modules/radio/electron/skills/policy";
 import type { Project } from "../src/types";
 
 function project(repositoryPath?: string): Project {

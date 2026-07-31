@@ -1,6 +1,7 @@
 export const SCHEMA_VERSION = 1;
 
 export type ProviderId = "codex" | "claude";
+export type ModelTier = "fast" | "balanced" | "frontier";
 export type RaDioMode = "autonomous" | "full_autonomous";
 export type AccountHealth = "healthy" | "draining" | "switching" | "cooldown" | "unavailable";
 export type RunStatus = "queued" | "active" | "approval" | "paused" | "blocked" | "failed" | "completed";
@@ -17,6 +18,33 @@ export type SpecialistRole =
   | "planner" | "product_designer" | "ui_designer" | "architect"
   | "frontend" | "backend" | "database" | "devops" | "integrator"
   | "reviewer" | "qa" | "security" | "accessibility" | "performance";
+
+export interface StarDefinition {
+  id: SpecialistRole;
+  title: string;
+  capabilities: string[];
+  coordinates: string[];
+  incidentCategories?: IncidentCategory[];
+  preferredProvider?: ProviderId;
+}
+
+export interface StarIdentity {
+  id: string;
+  projectId: string;
+  role: SpecialistRole;
+  title: string;
+}
+
+export interface StarContinuity {
+  identity: StarIdentity;
+  latestAssignment?: string;
+  decisions: string[];
+  evidenceIds: string[];
+  openQuestions: string[];
+  handoffSummary?: string;
+  provider?: ProviderId;
+  updatedAt: string;
+}
 
 export interface ProviderStatus {
   id: ProviderId;
@@ -36,6 +64,30 @@ export interface ProviderContract {
   capabilities: string[];
   missingCapabilities: string[];
   remediation?: string;
+}
+
+export interface PromptManifestRecord {
+  directiveIds: string[];
+  directiveVersions: Record<string, string>;
+  requestedTier: ModelTier;
+  resolvedProvider: ProviderId;
+  resolvedModel: string;
+  routingReason: string;
+  fallbackHistory: string[];
+  promptDigest: string;
+}
+
+export interface AiExecutionRecord {
+  sessionId: string;
+  projectId: string;
+  runId: string;
+  role: SpecialistRole | "RaDio";
+  coordinate: string;
+  manifest: PromptManifestRecord;
+  status: "running" | "succeeded" | "failed" | "cancelled" | "blocked";
+  tokenUsage?: { input?: number; output?: number; total?: number };
+  startedAt: string;
+  completedAt?: string;
 }
 
 export interface ProviderAuthState {
@@ -255,6 +307,7 @@ export interface MaintenanceMessage {
   status: "waiting_for_source" | "streaming" | "completed" | "cancelled" | "failed";
   requiresSource: boolean;
   cards: RaDioExecutionCard[];
+  promptManifest?: PromptManifestRecord;
   createdAt: string;
   completedAt?: string;
   redacted: true;
@@ -440,6 +493,8 @@ export interface Project {
   visibility: "Private" | "Public" | "Local";
   provider: ProviderId;
   roleProviders?: Partial<Record<SpecialistRole, ProviderId>>;
+  starContinuity?: Partial<Record<SpecialistRole, StarContinuity>>;
+  aiExecutions?: AiExecutionRecord[];
   runId: string;
   runStatus: RunStatus;
   workflow: WorkflowStep[];

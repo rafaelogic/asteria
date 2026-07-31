@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { reconcileMaintenanceRelaunch } from "../electron/radio/maintenance-update";
-import { maintenanceChangesSource } from "../electron/radio/validation-manager";
+import { reconcileMaintenanceRelaunch } from "../modules/radio/electron/maintenance-update";
+import { maintenanceChangesSource } from "../modules/radio/electron/validation-manager";
 import type { ApplicationMaintenanceSettings } from "../src/types";
 
 const state = {

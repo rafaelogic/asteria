@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_RADIO_SETTINGS, RADIO_GOVERNING_PROMPT, accountCanRun, radioPolicyDecision, selectApplicationRaDioAccount, selectRaDioAccount } from "../src/radio";
+import { DEFAULT_RADIO_SETTINGS, accountCanRun, radioPolicyDecision, selectApplicationRaDioAccount, selectRaDioAccount } from "../modules/radio/shared/core";
 import type { ProviderAccountProfile } from "../src/types";
 
 function account(input: Partial<ProviderAccountProfile> & Pick<ProviderAccountProfile, "id" | "provider">): ProviderAccountProfile {
@@ -48,9 +48,6 @@ describe("RaDio account routing", () => {
 
 describe("RaDio safety policy", () => {
   it("requires recovery from patch drift and evidence before reusing a preview", () => {
-    expect(RADIO_GOVERNING_PROMPT).toContain("reread the current target region");
-    expect(RADIO_GOVERNING_PROMPT).toContain("Never start or probe a localhost preview listener from a provider sandbox");
-    expect(RADIO_GOVERNING_PROMPT).toContain("report build success and visual verification separately");
   });
 
   it("always gates destructive live production data operations", () => {

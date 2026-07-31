@@ -7,7 +7,8 @@ import {
 import { Brand } from "../components/Brand";
 import { ProviderMark } from "../components/ProviderMark";
 import type { OnboardingDraft, Project, ProviderId, ProviderStatus, SpecialistRole } from "../types";
-import { DEFAULT_RADIO_SETTINGS } from "../radio";
+import { DEFAULT_RADIO_SETTINGS } from "../../modules/radio/shared/core";
+import { starForRole } from "../../modules/stars/shared/catalog";
 
 const labels = ["Providers", "Git", "Repository", "Idea", "Roles", "RaDio", "Privacy", "Review"];
 const initialDraft: OnboardingDraft = {
@@ -28,13 +29,13 @@ const initialDraft: OnboardingDraft = {
 };
 
 const teamGroups: Array<{ number: string; title: string; detail: string; roles: SpecialistRole[]; required?: boolean }> = [
-  { number: "01", title: "Planner", detail: "Requirements owner · always on", roles: ["planner"], required: true },
-  { number: "02", title: "Design + Architect", detail: "Experience and contracts · always on", roles: ["product_designer", "architect"], required: true },
-  { number: "03", title: "Frontend Developer", detail: "Interface implementation worktree", roles: ["frontend"] },
-  { number: "04", title: "Backend Developer", detail: "Services and data worktree", roles: ["backend"] },
-  { number: "05", title: "DevOps Engineer", detail: "Infrastructure implementation worktree", roles: ["devops"] },
-  { number: "06", title: "Review + QA", detail: "Evidence gates · always on", roles: ["reviewer", "qa"], required: true },
-  { number: "07", title: "Security + Release", detail: "Human-controlled ship · always on", roles: ["security"], required: true }
+  { number: "01", title: starForRole("planner").title, detail: "Requirements owner · always on", roles: ["planner"], required: true },
+  { number: "02", title: `${starForRole("product_designer").title} + ${starForRole("architect").title}`, detail: "Experience and contracts · always on", roles: ["product_designer", "architect"], required: true },
+  { number: "03", title: starForRole("frontend").title, detail: "Interface implementation worktree", roles: ["frontend"] },
+  { number: "04", title: starForRole("backend").title, detail: "Services and data worktree", roles: ["backend"] },
+  { number: "05", title: starForRole("devops").title, detail: "Infrastructure implementation worktree", roles: ["devops"] },
+  { number: "06", title: `${starForRole("reviewer").title} + ${starForRole("qa").title}`, detail: "Evidence gates · always on", roles: ["reviewer", "qa"], required: true },
+  { number: "07", title: starForRole("security").title, detail: "Human-controlled ship · always on", roles: ["security"], required: true }
 ];
 
 export function OnboardingScreen({ onComplete, onExplore, onCancel, existingProjectCount = 0 }: {

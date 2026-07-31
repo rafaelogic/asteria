@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { open, realpath, stat } from "node:fs/promises";
 import path from "node:path";
-import type { RaDioChatAttachment } from "../../src/types.js";
+import type { RaDioChatAttachment } from "../../../src/types.js";
 
 const allowed = new Set([".txt", ".md", ".mdx", ".json", ".jsonl", ".log", ".csv", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".css", ".scss", ".html", ".xml", ".yaml", ".yml", ".toml", ".sql", ".sh", ".py", ".go", ".rs", ".java", ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 const mime: Record<string, string> = { ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".md": "text/markdown", ".json": "application/json" };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validationChecksForMaintenance } from "../electron/radio/validation-manager";
+import { validationChecksForMaintenance } from "../modules/radio/electron/validation-manager";
 
 describe("trusted host validation routing", () => {
   it("runs the fixed full validation set for source-changing maintenance work", () => {

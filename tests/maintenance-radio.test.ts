@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { maintenanceRequiresPreview, maintenanceRequiresSource, maintenanceUsesHostPreview } from "../electron/radio/supervisor";
+import { maintenanceRequiresPreview, maintenanceRequiresSource, maintenanceUsesHostPreview } from "../modules/radio/electron/supervisor";
 import { MaintenanceSendSchema, MaintenanceSourceSchema } from "../electron/contracts";
 import { improveMaintenancePrompt } from "../src/screens/MaintenanceRadioScreen";
 

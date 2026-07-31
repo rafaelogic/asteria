@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
-import type { Project, SkillCompatibility, SkillManifest, SkillRecord, SpecialistRole } from "../../../src/types.js";
+import type { Project, SkillCompatibility, SkillManifest, SkillRecord, SpecialistRole } from "../../../../src/types.js";
 import { BUILTIN_SKILLS } from "./catalog.js";
 import { CAPABILITY_ADAPTERS } from "./adapters.js";
 import { OrbitSkillSchema } from "./schema.js";

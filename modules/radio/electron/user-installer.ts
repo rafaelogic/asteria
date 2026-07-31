@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { UserInstallState } from "../../src/types.js";
+import type { UserInstallState } from "../../../src/types.js";
 
 const execute = promisify(execFile);
 async function runInRepository(root: string, command: string, args: string[], timeout = 30 * 60_000) {

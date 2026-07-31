@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { verifyPreviewIdentity } from "../electron/radio/preview-manager";
+import { verifyPreviewIdentity } from "../modules/radio/electron/preview-manager";
 
 describe("host preview identity verification", () => {
   afterEach(() => vi.unstubAllGlobals());

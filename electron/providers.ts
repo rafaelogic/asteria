@@ -80,7 +80,7 @@ export function resolveProviderCommand(
 export function providerStartArgs(
   provider: ProviderId,
   prompt: string,
-  options: { workspaceWrite?: boolean } = {}
+  options: { workspaceWrite?: boolean; model?: string } = {}
 ) {
   if (provider === "codex") {
     return [
@@ -88,6 +88,7 @@ export function providerStartArgs(
       "--json",
       "--sandbox",
       options.workspaceWrite ? "workspace-write" : "read-only",
+      ...(options.model && options.model !== "provider-configured-default" ? ["--model", options.model] : []),
       prompt,
     ];
   }
@@ -98,6 +99,7 @@ export function providerStartArgs(
     "--verbose",
     "--permission-mode",
     options.workspaceWrite ? "acceptEdits" : "plan",
+    ...(options.model && options.model !== "provider-configured-default" ? ["--model", options.model] : []),
     prompt,
   ];
 }
@@ -218,15 +220,16 @@ export class ProviderManager extends EventEmitter {
     return { sessionId, pid: process.pid };
   }
 
-  start(provider: ProviderId, prompt: string, context: IsolationContext, options: { workspaceWrite?: boolean } = {}) {
+  start(provider: ProviderId, prompt: string, context: IsolationContext, options: { workspaceWrite?: boolean; model?: string } = {}) {
     if (this.sessions.has(context.sessionId)) throw new Error("Session is already running.");
     const command = resolveProviderCommand(provider);
     if (!command) throw new Error(`${provider === "codex" ? "OpenAI Codex" : "Claude Code"} CLI could not be resolved.`);
     const shell = os.platform() === "win32" ? "powershell.exe" : command;
     const providerArgs = providerStartArgs(provider, prompt, options);
+    const modelFlag = options.model && options.model !== "provider-configured-default" ? ` --model '${options.model.replaceAll("'", "''")}'` : "";
     const windowsFlags = provider === "codex"
-      ? `exec --json --sandbox ${options.workspaceWrite ? "workspace-write" : "read-only"}`
-      : `-p --output-format stream-json --verbose --permission-mode ${options.workspaceWrite ? "acceptEdits" : "plan"}`;
+      ? `exec --json --sandbox ${options.workspaceWrite ? "workspace-write" : "read-only"}${modelFlag}`
+      : `-p --output-format stream-json --verbose --permission-mode ${options.workspaceWrite ? "acceptEdits" : "plan"}${modelFlag}`;
     const args = os.platform() === "win32"
       ? ["-NoProfile", "-Command", `& '${command.replaceAll("'", "''")}' ${windowsFlags} -- $input`, prompt]
       : providerArgs;

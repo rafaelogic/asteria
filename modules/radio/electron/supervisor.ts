@@ -1,11 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { HealthIncident, HealthSignal, IncidentCategory, Project, RaDioChatCommand, SpecialistRole, TakeoverState } from "../../src/types.js";
-import { radioPolicyDecision } from "../../src/radio.js";
-
-const routing: Record<IncidentCategory, SpecialistRole> = {
-  renderer: "frontend", electron: "backend", provider: "devops", tool: "integrator", build: "devops",
-  test: "qa", git: "integrator", storage: "database", security: "security", packaging: "devops", startup: "devops", unknown: "architect"
-};
+import type { HealthIncident, HealthSignal, IncidentCategory, Project, RaDioChatCommand, SpecialistRole, TakeoverState } from "../../../src/types.js";
+import { radioPolicyDecision } from "../shared/core.js";
+import { starForIncident } from "../../stars/shared/catalog.js";
 
 export function defaultTakeover(projectId: string, runId: string, enabled = false): TakeoverState {
   return { projectId, runId, enabled, phase: enabled ? "inspecting" : "idle", health: "healthy", updatedAt: new Date().toISOString() };
@@ -39,7 +35,7 @@ export function recordIncident(project: Project, input: { source: string; operat
   const signal: HealthSignal = { id: randomUUID(), projectId: project.id, runId: project.runId, source: input.source, category, operation: input.operation, message: input.message, severity: input.severity ?? "error", evidenceDigest: createHash("sha256").update(input.message).digest("hex"), capturedAt: now, redacted: true };
   const existing = project.incidents.find((item) => item.fingerprint === fingerprint && item.status !== "resolved");
   if (existing) return project.incidents.map((item) => item.id === existing.id ? { ...item, signals: [...item.signals, signal], updatedAt: now } : item);
-  const owner = routing[category];
+  const owner = starForIncident(category);
   const incident: HealthIncident = {
     id: randomUUID(), fingerprint, projectId: project.id, runId: project.runId, category,
     title: `${category.charAt(0).toUpperCase()}${category.slice(1)} failure`, detail: input.message,

@@ -1,5 +1,5 @@
 import type { AgentEvent, Artifact, Project, TaskCard, ThreadMessage, WorkflowStep } from "./types";
-import { DEFAULT_RADIO_SETTINGS } from "./radio";
+import { DEFAULT_RADIO_SETTINGS } from "../modules/radio/shared/core";
 
 const now = new Date().toISOString();
 

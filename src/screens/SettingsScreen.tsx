@@ -2,13 +2,9 @@ import { useEffect, useState } from "react";
 import { BellIcon, CheckCircleIcon, CpuIcon, GitBranchIcon, LockKeyIcon, PlusIcon, RobotIcon, ShieldCheckIcon, SirenIcon, SwapIcon } from "@phosphor-icons/react";
 import type { Project, ProviderAccountProfile, ProviderId, ProviderStatus, RaDioMode, SpecialistRole } from "../types";
 import { ProviderMark } from "../components/ProviderMark";
+import { STAR_CATALOG } from "../../modules/stars/shared/catalog";
 
-const roles: Array<{ id: SpecialistRole; label: string }> = [
-  { id: "planner", label: "Product Planner" }, { id: "architect", label: "Technical Architect" },
-  { id: "frontend", label: "Frontend Developer" }, { id: "backend", label: "Backend Developer" },
-  { id: "reviewer", label: "Reviewer" }, { id: "qa", label: "QA Engineer" },
-  { id: "security", label: "Security Reviewer" }, { id: "devops", label: "DevOps Engineer" }
-];
+const roles: Array<{ id: SpecialistRole; label: string }> = STAR_CATALOG.map((star) => ({ id: star.id, label: star.title }));
 
 const demoAccounts: ProviderAccountProfile[] = [
   { id: "demo-codex", nickname: "Codex primary", provider: "codex", enabled: true, order: 0, authenticated: true, capabilities: ["structured-stream", "cancellation", "isolated-home", "tool-events"], health: "healthy", usage: { remainingPercent: 62, source: "provider", capturedAt: new Date().toISOString() }, activeSessions: 1, concurrencyLimit: 2, failureRate: .01, allowedProjectIds: [], allowedRoles: [] },
@@ -98,6 +94,7 @@ export function SettingsScreen({ project, onProject }: { project: Project; onPro
     </section>
     <div className="settings-layout"><section className="settings-panel"><header><CpuIcon /><div><h2>Role routing</h2><p>Use the project default or assign a provider per specialist.</p></div></header><div className="role-settings">{roles.map((role) => <label key={role.id}><span><strong>{role.label}</strong><small>{role.id}</small></span><select value={project.roleProviders?.[role.id] ?? project.provider} onChange={(event) => void assign(role.id, event.target.value as ProviderId)}><option value="codex">OpenAI Codex</option><option value="claude">Claude Code</option></select></label>)}</div></section>
       <div className="settings-stack"><section className="settings-panel"><header><CheckCircleIcon /><div><h2>Provider health</h2><p>Installed CLI capability detection.</p></div></header><div className="health-list">{providers.length ? providers.map((provider) => <div key={provider.id}><span className={`provider-health-mark ${provider.id}`}><ProviderMark provider={provider.id} size={20} /></span><span><strong>{provider.name}</strong><small>{provider.version ?? "Version unavailable"}</small></span><b className={provider.available ? "success" : ""}>{provider.available ? "Ready" : "Missing"}</b></div>) : <p className="muted-copy">Health checks are available in the Electron application.</p>}</div></section>
+        <section className="settings-panel"><header><CpuIcon /><div><h2>AI routing evidence</h2><p>Directive-selected tiers and resolved Relay models.</p></div></header><div className="health-list">{project.aiExecutions?.slice(0, 4).map((execution) => <div key={execution.sessionId}><span className={`provider-health-mark ${execution.manifest.resolvedProvider}`}><ProviderMark provider={execution.manifest.resolvedProvider} size={20} /></span><span><strong>{execution.role} · {execution.manifest.requestedTier}</strong><small>{execution.manifest.resolvedModel} · {execution.manifest.routingReason}</small></span><b className={execution.status === "succeeded" ? "success" : ""}>{execution.status}</b></div>)}{!project.aiExecutions?.length && <p className="muted-copy">Routing evidence appears after the first Star or RaDio run.</p>}</div></section>
         <section className="settings-panel"><header><BellIcon /><div><h2>Notifications</h2><p>Safety stops, failures, budgets, and releases.</p></div></header><button className="button secondary wide" onClick={() => void Notification.requestPermission()}>Enable desktop notifications</button></section>
         <section className="settings-panel"><header><GitBranchIcon /><div><h2>Run budget</h2><p>{project.budget.usedMinutes} of {project.budget.minutes} minutes · {Math.round(project.budget.usedTokens / 1000)}k of {Math.round(project.budget.tokenLimit / 1000)}k tokens</p></div></header><div className="budget-bar"><b style={{ width: `${Math.min(100, project.budget.usedMinutes / project.budget.minutes * 100)}%` }} /></div></section></div></div>
   </div>;

@@ -1,4 +1,4 @@
-import type { CapabilityAdapter, SkillCapability } from "../../../src/types.js";
+import type { CapabilityAdapter, SkillCapability } from "../../../../src/types.js";
 
 const definitions: Array<[string, SkillCapability, string[]]> = [
   ["filesystem", "filesystem", ["read", "list", "write-scoped"]], ["command", "command", ["execute-scoped", "cancel"]],

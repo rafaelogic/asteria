@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 describe("clean-install encryption contract", () => {
   const main = readFileSync("electron/main.ts", "utf8");
   const storage = readFileSync("electron/storage.ts", "utf8");
-  const accountVault = readFileSync("electron/radio/account-vault.ts", "utf8");
+  const accountVault = readFileSync("modules/radio/electron/account-vault.ts", "utf8");
   const manifest = JSON.parse(readFileSync("package.json", "utf8")) as { build: { linux: { executableArgs?: string[] } } };
 
   it("fails closed except for Asteria's explicit, visibly degraded Linux basic backend", () => {
