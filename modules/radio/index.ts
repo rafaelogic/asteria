@@ -1,4 +1,5 @@
 export * from "./shared/core.js";
+export * from "./shared/authorization.js";
 export * from "./electron/core.js";
 export * from "./electron/module.js";
 export * from "./electron/account-vault.js";

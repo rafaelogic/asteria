@@ -104,6 +104,11 @@ const api: AsteriaApi = {
     request: (input) => ipcRenderer.invoke("approvals:request", input),
     decide: (input) => ipcRenderer.invoke("approvals:decide", input)
   },
+  authorization: {
+    list: (projectId) => ipcRenderer.invoke("authorization:list", projectId),
+    decide: (input) => ipcRenderer.invoke("authorization:decide", input),
+    revoke: (input) => ipcRenderer.invoke("authorization:revoke", input),
+  },
   telemetry: {
     policy: () => ipcRenderer.invoke("telemetry:policy"),
     updatePolicy: (policy) => ipcRenderer.invoke("telemetry:update-policy", policy),

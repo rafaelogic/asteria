@@ -5,7 +5,7 @@ import { accessSync, constants, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as pty from "node-pty";
-import type { ProviderContract, ProviderId } from "../src/types.js";
+import type { AgentEvent, AuthorizationPermission, ProviderContract, ProviderId, RiskClassification } from "../src/types.js";
 import { redactSecrets } from "../src/redaction.js";
 import type { IsolationContext } from "./isolation.js";
 
@@ -17,8 +17,8 @@ export interface ProviderStatus {
 }
 
 const requiredCapabilities: Record<ProviderId, string[]> = {
-  codex: ["structured-stream", "cancellation", "isolated-home", "tool-events"],
-  claude: ["structured-stream", "cancellation", "isolated-home", "tool-events"]
+  codex: ["structured-stream", "cancellation", "isolated-home", "tool-events", "authorization-events", "session-resume"],
+  claude: ["structured-stream", "cancellation", "isolated-home", "tool-events", "authorization-events", "session-resume"]
 };
 
 function executable(candidate: string) {
@@ -88,6 +88,8 @@ export function providerStartArgs(
       "--json",
       "--sandbox",
       options.workspaceWrite ? "workspace-write" : "read-only",
+      "-c",
+      'approval_policy="on-request"',
       ...(options.model && options.model !== "provider-configured-default" ? ["--model", options.model] : []),
       prompt,
     ];
@@ -98,7 +100,7 @@ export function providerStartArgs(
     "stream-json",
     "--verbose",
     "--permission-mode",
-    options.workspaceWrite ? "acceptEdits" : "plan",
+    options.workspaceWrite ? "default" : "plan",
     ...(options.model && options.model !== "provider-configured-default" ? ["--model", options.model] : []),
     prompt,
   ];
@@ -125,6 +127,13 @@ function versionNumber(value?: string) {
   return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : undefined;
 }
 
+function atLeast(actual: number[] | undefined, minimum: [number, number, number]) {
+  if (!actual) return false;
+  return actual[0] > minimum[0]
+    || actual[0] === minimum[0] && (actual[1] > minimum[1]
+      || actual[1] === minimum[1] && actual[2] >= minimum[2]);
+}
+
 function detect(id: ProviderId): ProviderStatus {
   const command = resolveProviderCommand(id);
   const result = command
@@ -140,6 +149,9 @@ function detect(id: ProviderId): ProviderStatus {
 
 export class ProviderManager extends EventEmitter {
   private sessions = new Map<string, pty.IPty>();
+  private sessionProviders = new Map<string, ProviderId>();
+  private approvalRequestIds = new Map<string, string | number>();
+  private completedAppServerSessions = new Set<string>();
   private normalizers = new Map<string, ProviderStreamNormalizer>();
 
   detectAll() {
@@ -166,7 +178,8 @@ export class ProviderManager extends EventEmitter {
   contracts(): ProviderContract[] {
     return this.detectAll().map((status) => {
       const parsed = versionNumber(status.version);
-      const compatible = status.available && Boolean(parsed) && (status.id === "codex" ? parsed![0] >= 0 : parsed![0] >= 1);
+      const minimum: [number, number, number] = status.id === "codex" ? [0, 146, 0] : [1, 0, 0];
+      const compatible = status.available && atLeast(parsed, minimum);
       const remediation = !status.available
         ? `${status.name} CLI was not found in PATH, a local/NVM installation, or its supported VS Code extension.`
         : !parsed
@@ -175,7 +188,7 @@ export class ProviderManager extends EventEmitter {
       return {
         schemaVersion: 1,
         provider: status.id,
-        minimumVersion: status.id === "codex" ? "0.100.0" : "1.0.0",
+        minimumVersion: status.id === "codex" ? "0.146.0" : "1.0.0",
         detectedVersion: status.version,
         compatible,
         capabilities: status.capabilities ?? [],
@@ -224,12 +237,13 @@ export class ProviderManager extends EventEmitter {
     if (this.sessions.has(context.sessionId)) throw new Error("Session is already running.");
     const command = resolveProviderCommand(provider);
     if (!command) throw new Error(`${provider === "codex" ? "OpenAI Codex" : "Claude Code"} CLI could not be resolved.`);
+    if (provider === "codex" && os.platform() !== "win32") return this.startCodexAppServer(command, prompt, context, options);
     const shell = os.platform() === "win32" ? "powershell.exe" : command;
     const providerArgs = providerStartArgs(provider, prompt, options);
     const modelFlag = options.model && options.model !== "provider-configured-default" ? ` --model '${options.model.replaceAll("'", "''")}'` : "";
     const windowsFlags = provider === "codex"
-      ? `exec --json --sandbox ${options.workspaceWrite ? "workspace-write" : "read-only"}${modelFlag}`
-      : `-p --output-format stream-json --verbose --permission-mode ${options.workspaceWrite ? "acceptEdits" : "plan"}${modelFlag}`;
+      ? `exec --json --sandbox ${options.workspaceWrite ? "workspace-write" : "read-only"} -c 'approval_policy="on-request"'${modelFlag}`
+      : `-p --output-format stream-json --verbose --permission-mode ${options.workspaceWrite ? "default" : "plan"}${modelFlag}`;
     const args = os.platform() === "win32"
       ? ["-NoProfile", "-Command", `& '${command.replaceAll("'", "''")}' ${windowsFlags} -- $input`, prompt]
       : providerArgs;
@@ -245,12 +259,14 @@ export class ProviderManager extends EventEmitter {
       env: env as Record<string, string>
     });
     this.sessions.set(context.sessionId, process);
+    this.sessionProviders.set(context.sessionId, provider);
     const normalizer = new ProviderStreamNormalizer();
     this.normalizers.set(context.sessionId, normalizer);
     process.onData((chunk) => normalizer.push(chunk).forEach((event) => this.emit("event", context.sessionId, event)));
     process.onExit(({ exitCode }) => {
       normalizer.flush().forEach((event) => this.emit("event", context.sessionId, event));
       this.sessions.delete(context.sessionId);
+      this.sessionProviders.delete(context.sessionId);
       this.normalizers.delete(context.sessionId);
       this.emit("event", context.sessionId, {
         id: randomUUID(),
@@ -263,16 +279,99 @@ export class ProviderManager extends EventEmitter {
     return { pid: process.pid };
   }
 
+  private startCodexAppServer(command: string, prompt: string, context: IsolationContext, options: { workspaceWrite?: boolean; model?: string }) {
+    const process = pty.spawn(command, ["app-server", "--stdio"], {
+      name: "xterm-256color",
+      cols: 120,
+      rows: 36,
+      cwd: context.workspaceRoot,
+      env: { ...context.env, PATH: providerExecutionPath(command, context.env.PATH) } as Record<string, string>,
+    });
+    const sessionId = context.sessionId;
+    this.sessions.set(sessionId, process);
+    this.sessionProviders.set(sessionId, "codex");
+    let buffer = "";
+    const send = (value: unknown) => process.write(`${JSON.stringify(value)}\n`);
+    send({ id: 1, method: "initialize", params: { clientInfo: { name: "asteria", title: "Asteria", version: "0.15.0" }, capabilities: { experimentalApi: true, requestAttestation: false } } });
+    process.onData((chunk) => {
+      buffer += chunk.replace(/\r\n/g, "\n");
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const rawLine of lines.map((line) => line.trim()).filter(Boolean)) {
+        try {
+          const message = JSON.parse(rawLine) as Record<string, any>;
+          if (message.id === 1 && message.result) {
+            send({ method: "initialized" });
+            send({ id: 2, method: "thread/start", params: {
+              cwd: context.workspaceRoot,
+              approvalPolicy: "on-request",
+              approvalsReviewer: "user",
+              sandbox: options.workspaceWrite ? "workspace-write" : "read-only",
+              model: options.model && options.model !== "provider-configured-default" ? options.model : null,
+              ephemeral: false,
+            } });
+            continue;
+          }
+          if (message.id === 2 && message.result?.thread?.id) {
+            send({ id: 3, method: "turn/start", params: {
+              threadId: message.result.thread.id,
+              input: [{ type: "text", text: prompt, text_elements: [] }],
+              approvalPolicy: "on-request",
+              approvalsReviewer: "user",
+            } });
+            continue;
+          }
+          if (typeof message.method === "string" && /requestApproval$/.test(message.method) && message.id !== undefined) {
+            this.approvalRequestIds.set(sessionId, message.id);
+          }
+          if (message.method === "turn/completed") {
+            this.completedAppServerSessions.add(sessionId);
+            this.emit("event", sessionId, { id: randomUUID(), type: "completed", timestamp: new Date().toISOString(), title: "Run completed", detail: "Codex app-server turn completed." });
+            process.kill();
+            continue;
+          }
+        } catch {
+          // Non-protocol stderr is normalized into a redacted local event below.
+        }
+        this.emit("event", sessionId, normalizeEvent(rawLine));
+      }
+    });
+    process.onExit(({ exitCode }) => {
+      this.sessions.delete(sessionId);
+      this.sessionProviders.delete(sessionId);
+      this.approvalRequestIds.delete(sessionId);
+      if (this.completedAppServerSessions.delete(sessionId)) return;
+      this.emit("event", sessionId, { id: randomUUID(), type: "error", timestamp: new Date().toISOString(), title: "Provider exited", detail: `Codex app-server exit code ${exitCode}` });
+    });
+    return { pid: process.pid };
+  }
+
   cancel(sessionId: string) {
     this.sessions.get(sessionId)?.kill();
     this.sessions.delete(sessionId);
     this.normalizers.delete(sessionId);
+    this.sessionProviders.delete(sessionId);
+  }
+
+  respondAuthorization(sessionId: string, decision: "allow" | "deny") {
+    const process = this.sessions.get(sessionId);
+    if (!process) return false;
+    if (this.sessionProviders.get(sessionId) === "codex") {
+      const id = this.approvalRequestIds.get(sessionId);
+      if (id === undefined) return false;
+      process.write(`${JSON.stringify({ id, result: { decision: decision === "allow" ? "accept" : "decline" } })}\n`);
+      this.approvalRequestIds.delete(sessionId);
+      return true;
+    }
+    process.write(decision === "allow" ? "y\r" : "n\r");
+    return true;
   }
 }
 
 export function normalizeEvent(chunk: string) {
   let detail = chunk.trim();
   let type = "message";
+  let authorization: AgentEvent["authorization"];
   try {
     const parsed = JSON.parse(chunk) as Record<string, any>;
     const contentText = (value: unknown): string | undefined => {
@@ -286,23 +385,55 @@ export function normalizeEvent(chunk: string) {
         .join("");
       return text || undefined;
     };
-    const eventName = typeof parsed.type === "string" ? parsed.type : "provider_event";
-    const item = parsed.item && typeof parsed.item === "object" ? parsed.item as Record<string, unknown> : undefined;
+    const eventName = typeof parsed.type === "string" ? parsed.type : typeof parsed.method === "string" ? parsed.method : "provider_event";
+    const item = parsed.item && typeof parsed.item === "object" ? parsed.item as Record<string, unknown>
+      : parsed.params && typeof parsed.params === "object" ? parsed.params as Record<string, unknown> : undefined;
     const itemType = typeof item?.type === "string" ? item.type : "";
+    const serialized = JSON.stringify(parsed);
+    const approvalLike = /approval|required_permission|permission_request|request_permission/i.test(`${eventName} ${itemType}`);
+    const authenticationLike = Number(parsed.status ?? parsed.status_code) === 401
+      || (/(?:error|auth)/i.test(`${eventName} ${itemType}`)
+        && /unauthorized|authentication required|not logged in|invalid.*token|status.?[:=]?401/i.test(serialized));
+    if (approvalLike || authenticationLike) {
+      const rawCommand = item?.command ?? parsed.command ?? parsed.operation ?? (itemType || eventName);
+      const command = Array.isArray(rawCommand) ? rawCommand.join(" ") : String(rawCommand);
+      const resource = String(parsed.cwd ?? item?.cwd ?? parsed.resource ?? command);
+      const permission: AuthorizationPermission = /network|url|domain/i.test(serialized) ? "network"
+        : /write|edit|patch/i.test(serialized) ? "filesystem_write"
+        : /git/i.test(command) ? "git_write"
+        : /deploy|production/i.test(serialized) ? "deployment"
+        : "command_execute";
+      const risk: RiskClassification = /delete|drop|truncate|production|destroy/i.test(serialized) ? "destructive"
+        : permission === "filesystem_write" || permission === "git_write" ? "workspace_write"
+        : permission === "network" || permission === "deployment" ? "external_mutation"
+        : "read";
+      authorization = {
+        kind: authenticationLike ? "authentication" : "permission",
+        permission: authenticationLike ? "credential" : permission,
+        operation: authenticationLike ? "provider.authenticate" : command,
+        resource,
+        reason: authenticationLike ? "The provider session requires authentication." : "The provider requested additional authority.",
+        risk,
+        providerRequestId: parsed.id === undefined ? undefined : String(parsed.id),
+      };
+      type = "approval_required";
+      detail = authorization.reason;
+    }
     const message = parsed.message && typeof parsed.message === "object" ? parsed.message as Record<string, unknown> : undefined;
     const visibleText =
       (itemType === "agent_message" ? contentText(item?.text) : undefined)
       ?? contentText(message?.content)
+      ?? contentText((parsed.params as Record<string, unknown> | undefined)?.delta)
       ?? contentText(parsed.delta?.text)
       ?? contentText(parsed.content)
       ?? contentText(parsed.text)
       ?? contentText(parsed.result);
-    if (visibleText) {
+    if (!authorization && visibleText) {
       detail = visibleText;
       type = itemType === "agent_message" || eventName === "assistant" || eventName.includes("message") || eventName.includes("delta") || eventName === "result"
         ? "message"
         : eventName.includes("tool") || itemType.includes("command") ? "tool_result" : "reasoning";
-    } else {
+    } else if (!authorization) {
       detail = eventName.replaceAll("_", " ");
       type = eventName.includes("tool") || itemType.includes("command") ? "tool_result" : "reasoning";
     }
@@ -313,8 +444,9 @@ export function normalizeEvent(chunk: string) {
     id: randomUUID(),
     type,
     timestamp: new Date().toISOString(),
-    title: type === "tool_result" ? "Tool update" : "Agent update",
-    detail: redactSecrets(detail)
+    title: type === "approval_required" ? "Authorization required" : type === "tool_result" ? "Tool update" : "Agent update",
+    detail: redactSecrets(detail),
+    authorization,
   };
 }
 

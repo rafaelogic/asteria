@@ -232,6 +232,9 @@ export class ProjectRepository {
       takeover: project.takeover ?? defaultTakeover(project.id, project.runId, project.radio?.mode === "full_autonomous"),
       starContinuity: normalizeStarContinuity(project),
       aiExecutions: (project.aiExecutions ?? []).slice(0, 500),
+      authorizationRequests: (project.authorizationRequests ?? []).slice(0, 500),
+      authorizationGrants: (project.authorizationGrants ?? []).slice(0, 500),
+      capabilityLeases: (project.capabilityLeases ?? []).filter((lease) => Date.parse(lease.expiresAt) > Date.now()).slice(0, 100),
       radioChats: project.radioChats ?? [{ id: randomUUID(), projectId: project.id, runId: project.runId, archived: false, messages: [], createdAt: project.createdAt, updatedAt: project.updatedAt }]
     };
   }
@@ -259,6 +262,9 @@ export class ProjectRepository {
       provider: draft.defaultProvider,
       starContinuity: emptyStarContinuity(id),
       aiExecutions: [],
+      authorizationRequests: [],
+      authorizationGrants: [],
+      capabilityLeases: [],
       runId,
       runStatus: "active",
       workflow,

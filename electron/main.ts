@@ -16,7 +16,7 @@ import {
   RaDioIdeaMutationSchema, RaDioHandoffSchema, SkillConfigureSchema, SkillCancelSchema, MemoryAddSchema, MemoryForgetSchema,
   TakeoverControlSchema, ChatSendSchema, ChatCancelSchema, HealthSignalSchema,
   MaintenanceSendSchema, MaintenanceCancelSchema, MaintenanceSourceSchema, MaintenanceMutationSchema,
-  MaintenanceControlSchema, MaintenanceGoalSchema, MaintenancePanelSchema
+  MaintenanceControlSchema, MaintenanceGoalSchema, MaintenancePanelSchema, AuthorizationDecisionSchema, AuthorizationRevokeSchema
 } from "./contracts.js";
 import { checkpoint, cleanupTaskWorktree, cloneRepository, createTaskWorktree, promoteFastForwardToStaging, repositoryStatus } from "./git.js";
 import {
@@ -41,8 +41,11 @@ import {
   selectApplicationRaDioAccount, selectRaDioAccount,
   validationChecksForMaintenance, type HostValidationEvidence, type HostValidationId, type PreviewEvidence, type PreviewWindow
 } from "../modules/radio/index.js";
-import type { ApplicationMaintenanceSettings, DeploymentRun, HealthFinding, NetworkApproval, NetworkRequest, Project, PromptManifestRecord, ReleaseEvidence, SpecialistRole } from "../src/types.js";
+import type { ApplicationMaintenanceSettings, AuthorizationPermission, DeploymentRun, HealthFinding, NetworkApproval, NetworkRequest, Project, PromptManifestRecord, ReleaseEvidence, SpecialistRole } from "../src/types.js";
 import { StarsModule } from "../modules/stars/index.js";
+import {
+  consumeAuthorization, createAuthorizationRequest, decideAuthorization, issueCapabilityLease, matchingGrant, validateCapabilityLease,
+} from "../modules/radio/shared/authorization.js";
 import { ModelRouter } from "../modules/shared/ai.js";
 import { loadDirectiveRegistry } from "../modules/shared/electron-directives.js";
 import { z } from "zod";
@@ -65,7 +68,7 @@ let maintenanceCycleTimer: NodeJS.Timeout | undefined;
 const hostValidationManager = new HostValidationManager();
 const skillRegistry = new SkillRegistry();
 const skillRuntime = new SkillRuntime(skillRegistry);
-const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude"; kind?: "workflow" | "chat" | "maintenance" | "authentication" | "repair" | "verification"; manifest?: PromptManifestRecord; chatMessageId?: string; incidentId?: string; maintenanceGoalId?: string; sourceRepositoryPath?: string; worktreePath?: string; worktreeBranch?: string; profileId?: string; authUrlOpened?: boolean; hostPreview?: boolean; hostValidation?: HostValidationId[] }>();
+const sessionContext = new Map<string, { projectId: string; runId: string; role: string; provider: "codex" | "claude"; kind?: "workflow" | "chat" | "maintenance" | "authentication" | "repair" | "verification"; manifest?: PromptManifestRecord; chatMessageId?: string; incidentId?: string; maintenanceGoalId?: string; sourceRepositoryPath?: string; worktreePath?: string; worktreeBranch?: string; profileId?: string; authUrlOpened?: boolean; hostPreview?: boolean; hostValidation?: HostValidationId[]; capabilityLeaseId?: string }>();
 const pendingAttachments = new Map<string, Map<string, import("../src/types.js").RaDioChatAttachment>>();
 const runningProjectSessions = new Map<string, Set<string>>();
 const failedProjectSessions = new Set<string>();
@@ -777,6 +780,52 @@ providers.on("event", (sessionId: string, event) => {
     });
   }
   window?.webContents.send("agent:event", { ...event, projectId: context?.projectId, runId: context?.runId, specialist: context?.role });
+  if (context && context.projectId !== "application" && event.type === "approval_required" && event.authorization) {
+    const project = store.projects.get(context.projectId);
+    if (project) {
+      const request = createAuthorizationRequest({
+        project,
+        sessionId,
+        provider: context.provider,
+        role: context.role === "RaDio" ? "RaDio" : context.role as SpecialistRole,
+        coordinate: project.currentAction.milestone,
+        ...event.authorization,
+      });
+      const existing = project.authorizationRequests?.find((item) =>
+        item.state === "pending" && item.sessionId === sessionId && item.fingerprint === request.fingerprint);
+      if (!existing) {
+        if (request.state === "denied") {
+          providers.respondAuthorization(sessionId, "deny");
+          const updated = store.projects.save({
+            ...project,
+            authorizationRequests: [request, ...(project.authorizationRequests ?? [])].slice(0, 500),
+            events: [{ id: request.id, projectId: project.id, runId: project.runId, type: "error", timestamp: request.createdAt, title: "Authorization denied by policy", detail: `${request.operation} · ${request.resource}`, specialist: context.role }, ...project.events],
+          }, project.version, `authorization_policy_${request.id}`);
+          window?.webContents.send("project:updated", updated);
+          return;
+        }
+        const grant = matchingGrant(project, request);
+        if (grant) {
+          const consumed = consumeAuthorization(project, request);
+          const updated = store.projects.save({
+            ...consumed.project,
+            authorizationRequests: [{ ...request, state: "consumed" as const, decision: "allow" as const, scope: grant.scope, updatedAt: new Date().toISOString() }, ...(project.authorizationRequests ?? [])].slice(0, 500),
+          }, project.version, `authorization_auto_${request.id}`);
+          window?.webContents.send("project:updated", updated);
+          providers.respondAuthorization(sessionId, "allow");
+        } else {
+          const updated = store.projects.save({
+            ...project,
+            authorizationRequests: [request, ...(project.authorizationRequests ?? [])].slice(0, 500),
+            currentAction: { ...project.currentAction, title: `${context.role} is awaiting authorization`, detail: request.reason, tool: "authorization" },
+            events: [{ id: request.id, projectId: project.id, runId: project.runId, type: "approval_required", timestamp: request.createdAt, title: "Authorization required", detail: `${request.operation} · ${request.resource}`, specialist: context.role }, ...project.events],
+          }, project.version, `authorization_request_${request.id}`);
+          window?.webContents.send("project:updated", updated);
+        }
+      }
+    }
+    return;
+  }
   if (context && context.projectId !== "application" && (event.type === "completed" || event.type === "error")) {
     const project = store.projects.get(context.projectId);
     const execution = project?.aiExecutions?.find((item) => item.sessionId === sessionId && item.status === "running");
@@ -787,6 +836,11 @@ providers.on("event", (sessionId: string, event) => {
           aiExecutions: project.aiExecutions?.map((item) => item.sessionId === sessionId
             ? { ...item, status: event.type === "completed" ? "succeeded" as const : "failed" as const, completedAt: new Date().toISOString() }
             : item),
+          authorizationGrants: (project.authorizationGrants ?? []).map((grant) =>
+            grant.scope === "session" && grant.sessionId === sessionId && !grant.revokedAt
+              ? { ...grant, revokedAt: new Date().toISOString() }
+              : grant),
+          capabilityLeases: (project.capabilityLeases ?? []).filter((lease) => lease.sessionId !== sessionId),
         }, project.version, `ai_execution_terminal_${sessionId}_${event.type}`);
         window?.webContents.send("project:updated", updated);
       } catch { /* The next durable project event reconciles concurrent terminal state. */ }
@@ -944,7 +998,14 @@ ipcMain.handle("projects:update", async (_event, raw) => {
   const project = store.projects.get(input.projectId);
   if (!project || project.runId !== input.runId) throw new Error("Project/run boundary mismatch.");
   if (input.patch.repositoryPath) await repositoryStatus(input.patch.repositoryPath);
-  return store.projects.save({ ...project, ...input.patch }, input.expectedVersion, input.idempotencyKey);
+  const repositoryChanged = input.patch.repositoryPath && path.resolve(input.patch.repositoryPath) !== path.resolve(project.repositoryPath ?? "");
+  return store.projects.save({
+    ...project,
+    ...input.patch,
+    authorizationGrants: repositoryChanged
+      ? (project.authorizationGrants ?? []).map((grant) => ({ ...grant, revokedAt: grant.revokedAt ?? new Date().toISOString() }))
+      : project.authorizationGrants,
+  }, input.expectedVersion, input.idempotencyKey);
 });
 ipcMain.handle("workflows:advance", (_event, raw) => {
   const input = WorkflowMutationSchema.parse(raw);
@@ -954,6 +1015,21 @@ ipcMain.handle("workflows:advance", (_event, raw) => {
   telemetry.record({ projectId: updated.id, runId: updated.runId, stage: updated.workflow.find((step) => step.status === "active")?.id, specialist: updated.currentAction.specialist, provider: updated.provider, kind: "stage", name: input.event, outcome: input.event.startsWith("fail") ? "failed" : "succeeded", payload: { version: updated.version } });
   return updated;
 });
+function assertActivationPreflight(project: Project, input: {
+  sessionId: string;
+  provider: "codex" | "claude";
+  role: SpecialistRole;
+  workspace: string;
+  lease: ReturnType<typeof issueCapabilityLease>;
+}) {
+  const contract = providers.contracts().find((item) => item.provider === input.provider);
+  if (!contract?.compatible) throw new Error(contract?.remediation ?? `${input.provider} is not compatible.`);
+  if (project.radio.emergencyStopped || project.runStatus === "paused" || project.runStatus === "blocked") throw new Error("Orbit authority is paused or blocked.");
+  if (project.budget.usedMinutes >= project.budget.minutes || project.budget.usedTokens >= project.budget.tokenLimit) throw new Error("Orbit execution budget is exhausted.");
+  if (sessionContext.has(input.sessionId)) throw new Error("Provider session nonce is already active.");
+  if (!path.isAbsolute(input.workspace)) throw new Error("Star workspace must be an absolute isolated path.");
+  validateCapabilityLease(input.lease, project, input.lease.permissions);
+}
 async function executeWorkflowRaw(raw: unknown) {
   const input = ProjectUpdateSchema.pick({ projectId: true, runId: true, expectedVersion: true, idempotencyKey: true }).parse(raw);
   const project = store.projects.get(input.projectId);
@@ -962,7 +1038,7 @@ async function executeWorkflowRaw(raw: unknown) {
   const activeSteps = project.workflow.filter((step) => step.status === "active");
   if (!activeSteps.length) throw new Error("No workflow stage is ready to execute.");
   const nextTasks = [...project.tasks];
-  const launches: Array<{ sessionId: string; provider: "codex" | "claude"; profileId?: string; role: typeof activeSteps[number]["role"]; workspace: string; prompt: string; manifest: PromptManifestRecord }> = [];
+  const launches: Array<{ sessionId: string; provider: "codex" | "claude"; profileId?: string; role: typeof activeSteps[number]["role"]; workspace: string; prompt: string; manifest: PromptManifestRecord; lease: ReturnType<typeof issueCapabilityLease> }> = [];
   const skillExecutions = [...(project.skillExecutions ?? [])];
   let starContinuity = project.starContinuity;
   for (const step of activeSteps) {
@@ -1003,6 +1079,21 @@ async function executeWorkflowRaw(raw: unknown) {
       task: step.role === "planner" || step.role === "architect" ? "planning" : step.role === "qa" || step.role === "reviewer" ? "verification" : step.id === "release" ? "release" : "implementation",
       repeatedFailures: (step.attempt ?? 1) - 1,
     });
+    const permissions = [...new Set([
+      "filesystem_read" as AuthorizationPermission,
+      ...activated.flatMap((manifest) => manifest.permissions as AuthorizationPermission[]),
+    ])];
+    const lease = issueCapabilityLease({
+      project,
+      sessionId,
+      role: step.role,
+      provider: providerId,
+      coordinate: step.name,
+      permissions,
+      riskCeiling: task.risk ?? "read",
+      promptDigest: composed.manifest.promptDigest,
+      skillDigests: activated.map((manifest) => manifest.integrity),
+    });
     launches.push({
       sessionId,
       provider: providerId,
@@ -1011,6 +1102,7 @@ async function executeWorkflowRaw(raw: unknown) {
       workspace: worktreePath,
       prompt: composed.prompt,
       manifest: composed.manifest,
+      lease,
     });
   }
   const updated = store.projects.save({
@@ -1022,11 +1114,13 @@ async function executeWorkflowRaw(raw: unknown) {
       ...launches.map((launch) => ({ sessionId: launch.sessionId, projectId: project.id, runId: project.runId, role: launch.role, coordinate: activeSteps.find((step) => step.role === launch.role)?.name ?? project.currentAction.milestone, manifest: launch.manifest, status: "running" as const, startedAt: new Date().toISOString() })),
       ...(project.aiExecutions ?? []),
     ]),
+    capabilityLeases: [...launches.map((launch) => launch.lease), ...(project.capabilityLeases ?? [])].slice(0, 100),
     currentAction: { ...project.currentAction, title: `${activeSteps.map((step) => step.name).join(" + ")} running`, detail: `${launches.length} isolated specialist session${launches.length === 1 ? "" : "s"} started.`, tool: `${launches.length} worktree${launches.length === 1 ? "" : "s"}` }
   }, input.expectedVersion, input.idempotencyKey);
   for (const launch of launches) {
+    assertActivationPreflight(updated, launch);
     const context = await createIsolationContext(app.getPath("userData"), launch.sessionId, launch.workspace, launch.provider, launch.profileId);
-    sessionContext.set(launch.sessionId, { projectId: project.id, runId: project.runId, role: launch.role, provider: launch.provider, kind: "workflow", manifest: launch.manifest });
+    sessionContext.set(launch.sessionId, { projectId: project.id, runId: project.runId, role: launch.role, provider: launch.provider, profileId: launch.profileId, kind: "workflow", manifest: launch.manifest, capabilityLeaseId: launch.lease.id });
     providers.start(launch.provider, launch.prompt, context, { workspaceWrite: launch.role !== "planner" && launch.role !== "architect" && launch.role !== "reviewer" && launch.role !== "qa" && launch.role !== "security", model: launch.manifest.resolvedModel });
     const running = runningProjectSessions.get(project.id) ?? new Set<string>();
     running.add(launch.sessionId);
@@ -1068,9 +1162,20 @@ ipcMain.handle("providers:start", async (_event, raw) => {
     specialistInstructions: input.prompt,
     task: input.role === "planner" || input.role === "architect" ? "planning" : "implementation",
   });
-  sessionContext.set(input.sessionId, { projectId: input.projectId, runId: input.runId, role: input.role, provider: input.provider, kind: "workflow", manifest: composed.manifest });
+  const lease = issueCapabilityLease({
+    project,
+    sessionId: input.sessionId,
+    role: input.role,
+    provider: input.provider,
+    coordinate: project.currentAction.milestone,
+    permissions: ["filesystem_read", "filesystem_write", "command_execute"],
+    riskCeiling: "workspace_write",
+    promptDigest: composed.manifest.promptDigest,
+  });
+  assertActivationPreflight(project, { sessionId: input.sessionId, provider: input.provider, role: input.role, workspace: input.workspace, lease });
+  sessionContext.set(input.sessionId, { projectId: input.projectId, runId: input.runId, role: input.role, provider: input.provider, profileId: input.profileId, kind: "workflow", manifest: composed.manifest, capabilityLeaseId: lease.id });
   const execution = { sessionId: input.sessionId, projectId: project.id, runId: project.runId, role: input.role, coordinate: project.currentAction.milestone, manifest: composed.manifest, status: "running" as const, startedAt: new Date().toISOString() };
-  store.projects.save({ ...project, aiExecutions: retainAiExecutions([execution, ...(project.aiExecutions ?? [])]) }, project.version, `provider_manifest_${input.sessionId}`);
+  store.projects.save({ ...project, capabilityLeases: [lease, ...(project.capabilityLeases ?? [])].slice(0, 100), aiExecutions: retainAiExecutions([execution, ...(project.aiExecutions ?? [])]) }, project.version, `provider_manifest_${input.sessionId}`);
   telemetry.record({ projectId: input.projectId, runId: input.runId, sessionId: input.sessionId, specialist: input.role, provider: input.provider, kind: "provider", name: "provider_started", outcome: "started", payload: {} });
   return providers.start(input.provider, composed.prompt, context, { model: composed.manifest.resolvedModel });
 });
@@ -1571,7 +1676,12 @@ ipcMain.handle("skills:configure", (_event, raw) => {
     if (input.enabled) approvals[input.skillId] = input.approvedDigest!;
     else delete approvals[input.skillId];
   }
-  return store.projects.save({ ...project, radio: { ...project.radio, enabledSkillIds: [...enabled], disabledSkillIds: [...disabled], approvedOrbitSkillDigests: approvals } }, input.expectedVersion, input.idempotencyKey);
+  const now = new Date().toISOString();
+  return store.projects.save({
+    ...project,
+    radio: { ...project.radio, enabledSkillIds: [...enabled], disabledSkillIds: [...disabled], approvedOrbitSkillDigests: approvals },
+    authorizationGrants: (project.authorizationGrants ?? []).map((grant) => grant.scope === "orbit" ? { ...grant, revokedAt: grant.revokedAt ?? now } : grant),
+  }, input.expectedVersion, input.idempotencyKey);
 });
 ipcMain.handle("skills:executions", (_event, projectId: unknown) => store.skills.executions(z.string().min(4).max(80).parse(projectId)));
 ipcMain.handle("skills:cancel", (_event, raw) => {
@@ -1711,6 +1821,74 @@ ipcMain.handle("approvals:decide", (_event, raw) => {
     ? { ...transitionWorkflow({ ...project, approvals }, "approve"), version: project.version }
     : { ...project, approvals, runStatus: "blocked" as const, currentAction: { ...project.currentAction, title: "Approval denied", detail: "Human direction is required before the workflow can continue." } };
   return store.projects.save(decided, input.expectedVersion, input.idempotencyKey);
+});
+ipcMain.handle("authorization:list", (_event, projectId: unknown) => {
+  const project = store.projects.get(z.string().min(4).max(80).parse(projectId));
+  if (!project) throw new Error("Orbit not found.");
+  return {
+    requests: project.authorizationRequests ?? [],
+    grants: (project.authorizationGrants ?? []).filter((grant) => !grant.revokedAt),
+    leases: (project.capabilityLeases ?? []).filter((lease) => Date.parse(lease.expiresAt) > Date.now()),
+  };
+});
+ipcMain.handle("authorization:decide", async (_event, raw) => {
+  const input = AuthorizationDecisionSchema.parse(raw);
+  const project = store.projects.get(input.projectId);
+  const request = project?.authorizationRequests?.find((item) => item.id === input.authorizationId);
+  if (!project || project.runId !== input.runId || project.version !== input.expectedVersion || !request) throw new Error("Authorization boundary mismatch.");
+  if (request.decisionToken !== input.decisionToken) throw new Error("Authorization decision token is missing or stale.");
+  const result = decideAuthorization(request, input.decision, input.scope);
+  const delivered = providers.respondAuthorization(request.sessionId ?? "", input.decision);
+  const now = new Date().toISOString();
+  const decidedRequest = {
+    ...result.request,
+    state: input.decision === "allow" && delivered ? (input.scope === "once" ? "consumed" as const : "delivered" as const) : "delivered" as const,
+    updatedAt: now,
+  };
+  const grant = result.grant ? {
+    ...result.grant,
+    useCount: delivered ? 1 : 0,
+    lastUsedAt: delivered ? now : undefined,
+    consumedAt: delivered && result.grant.scope === "once" ? now : undefined,
+    revokedAt: delivered && result.grant.scope === "once" ? now : undefined,
+  } : undefined;
+  const requests = project.authorizationRequests!.map((item) => item.id === request.id ? decidedRequest : item);
+  const grants = grant ? [grant, ...(project.authorizationGrants ?? [])].slice(0, 500) : project.authorizationGrants;
+  const updated = store.projects.save({
+    ...project,
+    authorizationRequests: requests,
+    authorizationGrants: grants,
+    currentAction: {
+      ...project.currentAction,
+      title: input.decision === "allow" ? `${request.role} authorization delivered` : `${request.role} is replanning after denial`,
+      detail: input.decision === "allow" ? `${request.operation} was authorized with ${input.scope} scope.` : `The denied operation was returned to ${request.role} as structured evidence.`,
+      tool: "authorization",
+    },
+    events: [{
+      id: randomUUID(), projectId: project.id, runId: project.runId, type: "tool_result", timestamp: now,
+      title: input.decision === "allow" ? "Authorization granted" : "Authorization denied",
+      detail: `${request.permission} · ${request.operation} · ${input.scope}`, specialist: request.role,
+    }, ...project.events],
+  }, input.expectedVersion, input.idempotencyKey);
+  telemetry.record({ projectId: project.id, runId: project.runId, sessionId: request.sessionId, specialist: request.role, provider: request.provider, kind: "approval", name: `authorization_${input.decision}`, outcome: input.decision === "allow" ? "succeeded" : "blocked", payload: { permission: request.permission, scope: input.scope, fingerprint: request.fingerprint } });
+  window?.webContents.send("project:updated", updated);
+  return updated;
+});
+ipcMain.handle("authorization:revoke", (_event, raw) => {
+  const input = AuthorizationRevokeSchema.parse(raw);
+  const project = store.projects.get(input.projectId);
+  const grant = project?.authorizationGrants?.find((item) => item.id === input.grantId);
+  if (!project || project.runId !== input.runId || project.version !== input.expectedVersion || !grant) throw new Error("Authorization grant boundary mismatch.");
+  const now = new Date().toISOString();
+  if (grant.sessionId) providers.cancel(grant.sessionId);
+  else runningProjectSessions.get(project.id)?.forEach((sessionId) => providers.cancel(sessionId));
+  const updated = store.projects.save({
+    ...project,
+    authorizationGrants: project.authorizationGrants!.map((item) => item.id === grant.id ? { ...item, revokedAt: now } : item),
+    events: [{ id: randomUUID(), projectId: project.id, runId: project.runId, type: "tool_result", timestamp: now, title: "Authorization revoked", detail: `${grant.permission} · ${grant.operation}`, specialist: "RaDio" }, ...project.events],
+  }, input.expectedVersion, input.idempotencyKey);
+  window?.webContents.send("project:updated", updated);
+  return updated;
 });
 
 ipcMain.handle("telemetry:policy", () => store.telemetry.policy());

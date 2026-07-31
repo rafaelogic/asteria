@@ -25,13 +25,13 @@ describe.each(["codex", "claude"])("%s versioned provider contract fixture", () 
 
 describe("provider repository access arguments", () => {
   it("grants Codex workspace writes only when explicitly requested", () => {
-    expect(providerStartArgs("codex", "fix it")).toEqual(["exec", "--json", "--sandbox", "read-only", "fix it"]);
-    expect(providerStartArgs("codex", "fix it", { workspaceWrite: true })).toEqual(["exec", "--json", "--sandbox", "workspace-write", "fix it"]);
+    expect(providerStartArgs("codex", "fix it")).toEqual(["exec", "--json", "--sandbox", "read-only", "-c", 'approval_policy="on-request"', "fix it"]);
+    expect(providerStartArgs("codex", "fix it", { workspaceWrite: true })).toEqual(["exec", "--json", "--sandbox", "workspace-write", "-c", 'approval_policy="on-request"', "fix it"]);
   });
 
-  it("grants Claude edit acceptance only when explicitly requested", () => {
+  it("keeps Claude in approval-aware default mode for workspace writes", () => {
     expect(providerStartArgs("claude", "fix it")).toContain("plan");
-    expect(providerStartArgs("claude", "fix it", { workspaceWrite: true })).toContain("acceptEdits");
+    expect(providerStartArgs("claude", "fix it", { workspaceWrite: true })).toContain("default");
   });
 });
 

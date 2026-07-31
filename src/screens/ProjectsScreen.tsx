@@ -18,7 +18,9 @@ export function ProjectsScreen({ projects, activeProjectId, onOpen, onNew }: {
   onNew: () => void;
 }) {
   const running = projects.filter((project) => project.runStatus === "active").length;
-  const approvals = projects.reduce((count, project) => count + project.approvals.filter((approval) => approval.status === "pending").length, 0);
+  const approvals = projects.reduce((count, project) => count
+    + project.approvals.filter((approval) => approval.status === "pending").length
+    + (project.authorizationRequests ?? []).filter((request) => request.state === "pending").length, 0);
 
   return (
     <div className="screen standard-screen projects-screen">

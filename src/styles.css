@@ -158,7 +158,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--cyan); o
 .log-toggle span { font-family: monospace; color: var(--cyan); margin-right: 8px; }
 
 .sheet-backdrop { position: fixed; z-index: 20; inset: 0; display: flex; align-items: flex-end; background: rgba(1,4,7,.12); }
-.approval-sheet { position: relative; width: 100%; height: 240px; padding: 20px 30px; border-top: 1px solid #293846; background: linear-gradient(110deg, #111a22, #0b1218); box-shadow: 0 -20px 70px rgba(0,0,0,.42); display: grid; grid-template-columns: 270px 1fr 260px; grid-template-rows: auto auto auto; gap: 8px 28px; }
+.approval-sheet { position: relative; width: 100%; min-height: 240px; height: auto; padding: 20px 30px; border-top: 1px solid #293846; background: linear-gradient(110deg, #111a22, #0b1218); box-shadow: 0 -20px 70px rgba(0,0,0,.42); display: grid; grid-template-columns: 270px 1fr minmax(260px, 420px); grid-template-rows: auto auto auto; gap: 8px 28px; }
 .sheet-close { position: absolute; right: 18px; top: 15px; }
 .sheet-title { display: flex; align-items: center; gap: 15px; }
 .sheet-title h2 { margin: 5px 0 0; font-size: 18px; }
@@ -171,6 +171,7 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--cyan); o
 .approval-grid span { display: grid; align-content: center; gap: 5px; }
 .approval-grid small { color: var(--muted); font-size: 8px; text-transform: uppercase; }
 .approval-grid strong { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 500; }
+.approval-sheet .sheet-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; align-content:end; gap:8px; }
 .files { grid-column: 3; grid-row: 1 / span 2; display: grid; gap: 8px; align-content: center; }
 .files span { display: flex; justify-content: space-between; gap: 10px; font-size: 9px; }
 .files b { color: var(--green); font-weight: 500; }

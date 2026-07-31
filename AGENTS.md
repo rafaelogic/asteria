@@ -48,6 +48,8 @@ RaDio is Asteria’s isolated autonomous core. Orbits choose Guided or Ascendant
 
 RaDio provider sessions must expose the same locally available provider skills and companion developer tools as the owner’s Codex or Claude environment, while preserving Asteria’s repository, network, deployment, credential, and approval boundaries.
 
+RaDio and Stars activate only with an Orbit/run/repository-bound capability lease. Provider permission and authentication interruptions are normalized by the trusted Electron host; grants are exact-resource scoped, deny rules take precedence, one-time grants are atomically consumed, session grants expire with the provider session, and durable grants apply only to the current Orbit. Destructive live-production-data operations always require a fresh focused one-time approval, while sandbox bypass and telemetry/analytics authorization remain permanently non-approvable.
+
 RaDio must automatically investigate and fix errors it encounters, then activate and verify the corrected state instead of stopping at the first failure. It may activate appropriately skilled supporting agents, including planning, product-shaping, and QA specialists, whenever their expertise improves execution or validation.
 
 RaDio must commit completed repository changes. It must never push from `main`, `master`, or another non-staging branch. Before publishing changes to GitHub, RaDio must switch to the repository's `staging` branch or create `staging` when it does not exist; `staging` is RaDio's authorized working and publishing branch.

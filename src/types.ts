@@ -11,6 +11,9 @@ export type RiskClassification = "read" | "workspace_write" | "external_mutation
 export type SkillSource = "builtin" | "orbit";
 export type SkillPermission = "filesystem_read" | "filesystem_write" | "command_execute" | "git_write" | "network_read" | "external_mutation" | "deployment" | "production";
 export type SkillCapability = "filesystem" | "command" | "git" | "github" | "provider" | "research" | "browser" | "packages" | "tests" | "deployment" | "observability" | "notifications" | "approvals";
+export type AuthorizationPermission = SkillPermission | "network" | "credential" | "sandbox_escalation";
+export type AuthorizationScope = "once" | "session" | "orbit";
+export type AuthorizationState = "pending" | "granted" | "denied" | "delivered" | "consumed" | "expired" | "revoked";
 export type SkillHealth = "ready" | "disabled" | "unapproved" | "incompatible" | "running" | "failed";
 export type IncidentCategory = "renderer" | "electron" | "provider" | "tool" | "build" | "test" | "git" | "storage" | "security" | "packaging" | "startup" | "unknown";
 export type TakeoverPhase = "idle" | "inspecting" | "executing" | "monitoring" | "classifying" | "repairing" | "verifying" | "integrating" | "pushing" | "building" | "installing" | "relaunching" | "observing" | "paused" | "blocked";
@@ -64,6 +67,69 @@ export interface ProviderContract {
   capabilities: string[];
   missingCapabilities: string[];
   remediation?: string;
+}
+
+export interface AuthorizationRequest {
+  id: string;
+  projectId: string;
+  runId: string;
+  sessionId?: string;
+  provider?: ProviderId;
+  role: SpecialistRole | "RaDio";
+  coordinate: string;
+  kind: "permission" | "authentication" | "policy" | "capability";
+  permission: AuthorizationPermission;
+  operation: string;
+  resource: string;
+  reason: string;
+  risk: RiskClassification;
+  fingerprint: string;
+  state: AuthorizationState;
+  eligibleScopes: AuthorizationScope[];
+  decision?: "allow" | "deny";
+  scope?: AuthorizationScope;
+  decisionToken: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string;
+}
+
+export interface AuthorizationGrant {
+  id: string;
+  projectId: string;
+  runId: string;
+  sessionId?: string;
+  fingerprint: string;
+  permission: AuthorizationPermission;
+  operation: string;
+  resource: string;
+  decision: "allow" | "deny";
+  scope: AuthorizationScope;
+  createdAt: string;
+  expiresAt?: string;
+  lastUsedAt?: string;
+  consumedAt?: string;
+  revokedAt?: string;
+  useCount: number;
+}
+
+export interface CapabilityLease {
+  id: string;
+  nonce: string;
+  digest: string;
+  projectId: string;
+  runId: string;
+  sessionId: string;
+  role: SpecialistRole | "RaDio";
+  provider: ProviderId;
+  coordinate: string;
+  repositoryPath?: string;
+  permissions: AuthorizationPermission[];
+  riskCeiling: RiskClassification;
+  promptDigest: string;
+  skillDigests: string[];
+  issuedAt: string;
+  expiresAt: string;
 }
 
 export interface PromptManifestRecord {
@@ -439,6 +505,15 @@ export interface AgentEvent {
   title: string;
   detail: string;
   specialist?: string;
+  authorization?: {
+    kind: "permission" | "authentication" | "policy" | "capability";
+    permission: AuthorizationPermission;
+    operation: string;
+    resource: string;
+    reason: string;
+    risk: RiskClassification;
+    providerRequestId?: string;
+  };
 }
 
 export interface TaskCard {
@@ -504,6 +579,9 @@ export interface Project {
   messages: ThreadMessage[];
   artifacts: Artifact[];
   approvals: ApprovalRequest[];
+  authorizationRequests?: AuthorizationRequest[];
+  authorizationGrants?: AuthorizationGrant[];
+  capabilityLeases?: CapabilityLease[];
   radio: RaDioSettings;
   ideas: IdeaProposal[];
   accountTransitions: AccountTransition[];
@@ -793,6 +871,11 @@ export interface AsteriaApi {
     list(projectId: string): Promise<ApprovalRequest[]>;
     request(input: MutationInput & { title: string; detail: string; risk: RiskClassification; operation: string; destinationScope?: string; diffDigest?: string; credentialScope?: string[] }): Promise<Project>;
     decide(input: MutationInput & { approvalId: string; decision: "approved" | "denied"; decisionToken?: string }): Promise<Project>;
+  };
+  authorization: {
+    list(projectId: string): Promise<{ requests: AuthorizationRequest[]; grants: AuthorizationGrant[]; leases: CapabilityLease[] }>;
+    decide(input: MutationInput & { authorizationId: string; decisionToken: string; decision: "allow" | "deny"; scope: AuthorizationScope }): Promise<Project>;
+    revoke(input: MutationInput & { grantId: string }): Promise<Project>;
   };
   telemetry: {
     policy(): Promise<TelemetryPolicy>;

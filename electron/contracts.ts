@@ -125,6 +125,15 @@ export const RaDioHandoffSchema = MutationSchema.extend({
   agentId: z.string().min(1).max(120), role: SpecialistRoleSchema, accountId: z.string().uuid(),
   reason: z.enum(["threshold", "quota", "manual", "unavailable"]).optional()
 });
+export const AuthorizationDecisionSchema = MutationSchema.extend({
+  authorizationId: z.string().uuid(),
+  decisionToken: z.string().uuid(),
+  decision: z.enum(["allow", "deny"]),
+  scope: z.enum(["once", "session", "orbit"]),
+});
+export const AuthorizationRevokeSchema = MutationSchema.extend({
+  grantId: z.string().uuid(),
+});
 export const SkillConfigureSchema = MutationSchema.extend({
   skillId: z.string().regex(/^[a-z0-9][a-z0-9.-]{2,79}$/), enabled: z.boolean(),
   approvedDigest: z.string().regex(/^[a-f0-9]{64}$/).optional()

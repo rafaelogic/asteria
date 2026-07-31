@@ -17,7 +17,7 @@ import { IdeasScreen } from "./screens/IdeasScreen";
 import { SkillsScreen } from "./screens/SkillsScreen";
 import { RadioChatScreen, MaintenanceRadioScreen, FloatingRaDio } from "../modules/radio/renderer/index";
 import { KanbanScreen, ThreadsScreen, WorkflowScreen } from "../modules/stars/renderer/index";
-import type { Project, ProviderId } from "./types";
+import type { AuthorizationScope, Project, ProviderId } from "./types";
 import { isApplicationWorkspace, workspaceHistoryProjectId } from "./workspace";
 
 interface AsteriaHistoryState {
@@ -170,6 +170,7 @@ export function App() {
   };
   const replaceProject = (updated: Project) => setProjects((current) => current.map((project) => project.id === updated.id ? updated : project));
   const pendingApproval = activeProject.approvals?.find((approval) => approval.status === "pending");
+  const pendingAuthorization = activeProject.authorizationRequests?.find((request) => request.state === "pending");
   const decideApproval = async (decision: "approved" | "denied") => {
     if (!pendingApproval) { setApprovalProject(null); return; }
     if (window.asteria) {
@@ -182,6 +183,27 @@ export function App() {
       replaceProject({ ...activeProject, version: activeProject.version + 1, approvals: activeProject.approvals.map((approval) => approval.id === pendingApproval.id ? { ...approval, status: decision } : approval) });
     }
     setApprovalProject(null);
+  };
+  const decideAuthorization = async (decision: "allow" | "deny", scope: AuthorizationScope) => {
+    if (!pendingAuthorization || !window.asteria) return;
+    try {
+      if (decision === "allow" && pendingAuthorization.kind === "authentication" && pendingAuthorization.provider) {
+        await window.asteria.providers.authenticate(pendingAuthorization.provider);
+      }
+      const updated = await window.asteria.authorization.decide({
+        projectId: activeProject.id,
+        runId: activeProject.runId,
+        expectedVersion: activeProject.version,
+        idempotencyKey: `authorization_${crypto.randomUUID()}`,
+        authorizationId: pendingAuthorization.id,
+        decisionToken: pendingAuthorization.decisionToken,
+        decision,
+        scope,
+      });
+      replaceProject(updated);
+    } catch (error) {
+      setDialog({ title: "Authorization could not be delivered", detail: error instanceof Error ? error.message : "Refresh the Orbit and try again." });
+    }
   };
   const togglePause = async () => {
     const paused = Boolean(pausedProjects[activeProject.id]);
@@ -298,7 +320,15 @@ export function App() {
         </motion.main>
       </AnimatePresence>
       {screen !== "radio-chat" && <FloatingRaDio project={activeProject} onProject={replaceProject} onMaximize={() => navigate("radio-chat")} />}
-      <ApprovalSheet open={approvalProject === activeProject.id} request={pendingApproval} onClose={() => setApprovalProject(null)} onApprove={() => void decideApproval("approved")} onDeny={() => void decideApproval("denied")} />
+      <ApprovalSheet
+        open={Boolean(pendingAuthorization) || approvalProject === activeProject.id}
+        authorization={pendingAuthorization}
+        request={pendingAuthorization ? undefined : pendingApproval}
+        onClose={() => setApprovalProject(null)}
+        onApprove={() => void decideApproval("approved")}
+        onAuthorize={(scope) => void decideAuthorization("allow", scope)}
+        onDeny={() => pendingAuthorization ? void decideAuthorization("deny", "once") : void decideApproval("denied")}
+      />
       <AppDialog model={dialog} onClose={() => setDialog(null)} />
     </div>
   );
