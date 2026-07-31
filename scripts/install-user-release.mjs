@@ -125,10 +125,20 @@ async function canary(executable, version) {
   mkdirSync(canaryRoot, { recursive: true, mode: 0o700 });
   const child = spawn(executable, [`--user-data-dir=${path.join(canaryRoot, "profile")}`, "--password-store=basic", ...launchArguments], { env: { ...applicationEnvironment, ASTERIA_HEALTHCHECK_FILE: heartbeat }, stdio: "ignore" });
   const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline && !existsSync(heartbeat) && child.exitCode === null) await new Promise((resolve) => setTimeout(resolve, 250));
+  let health;
+  while (Date.now() < deadline && child.exitCode === null) {
+    if (existsSync(heartbeat)) {
+      try {
+        const parsed = JSON.parse(readFileSync(heartbeat, "utf8"));
+        if (parsed?.heartbeat && parsed?.version === version) { health = parsed; break; }
+      } catch {
+        // A legacy candidate may expose the file before its asynchronous write completes.
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
   child.kill();
-  if (!existsSync(heartbeat)) throw new Error("Candidate did not produce a healthy startup heartbeat.");
-  const health = JSON.parse(readFileSync(heartbeat, "utf8"));
+  if (!health) throw new Error("Candidate did not produce a complete matching startup heartbeat.");
   rmSync(canaryRoot, { recursive: true, force: true });
   return health;
 }

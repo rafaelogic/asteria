@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, screen, session, shell } from "electron";
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rename, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -169,7 +169,12 @@ function createWindow() {
   });
   window.webContents.once("did-finish-load", () => {
     const heartbeat = process.env.ASTERIA_HEALTHCHECK_FILE;
-    if (heartbeat) void writeFile(heartbeat, JSON.stringify({ version: app.getVersion(), storage: Boolean(store), providers: providers.contracts().length > 0, skills: true, renderer: true, consoleErrors: [], heartbeat: true, checkedAt: new Date().toISOString() }), { mode: 0o600 });
+    if (heartbeat) {
+      const temporary = `${heartbeat}.tmp-${randomUUID()}`;
+      void writeFile(temporary, JSON.stringify({ version: app.getVersion(), storage: Boolean(store), providers: providers.contracts().length > 0, skills: true, renderer: true, consoleErrors: [], heartbeat: true, checkedAt: new Date().toISOString() }), { mode: 0o600 })
+        .then(() => rename(temporary, heartbeat))
+        .catch(() => rm(temporary, { force: true }));
+    }
   });
   if (process.env.VITE_DEV_SERVER_URL) void window.loadURL(process.env.VITE_DEV_SERVER_URL);
   else void window.loadFile(path.join(currentDir, "../../dist/client/index.html"));

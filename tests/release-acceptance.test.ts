@@ -63,6 +63,13 @@ describe("release acceptance gates", () => {
     expect(installer).toContain('process.on("unhandledRejection", recoverFromFatalError)');
     expect(installer).toContain('status: "failed"');
     expect(installer).toContain("launchKnownGood()");
+    expect(installer).toContain("complete matching startup heartbeat");
+    expect(installer).toContain("parsed?.version === version");
+  });
+  it("publishes canary health atomically before the installer consumes it", () => {
+    const main = readFileSync("electron/main.ts", "utf8");
+    expect(main).toContain("rename(temporary, heartbeat)");
+    expect(main).toContain("heartbeat}.tmp-");
   });
   it("bootstraps exact-revision dependencies before self-install verification", () => {
     const installer = readFileSync("modules/radio/electron/user-installer.ts", "utf8");
