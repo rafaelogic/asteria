@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { HealthIncident, HealthSignal, IncidentCategory, Project, RaDioChatCommand, SpecialistRole, TakeoverState } from "../../../src/types.js";
 import { radioPolicyDecision } from "../shared/core.js";
 import { starForIncident } from "../../stars/shared/catalog.js";
+import { behaviorStates, classifyRadioIntent, deterministicStopConditions } from "../shared/behavior.js";
 
 export function defaultTakeover(projectId: string, runId: string, enabled = false): TakeoverState {
   return { projectId, runId, enabled, phase: enabled ? "inspecting" : "idle", health: "healthy", updatedAt: new Date().toISOString() };
@@ -56,8 +57,17 @@ export function classifyChatCommand(body: string): RaDioChatCommand {
     /task|ticket|kanban/.test(text) ? "task" : /skill/.test(text) ? "skill" : /report|observation/.test(text) ? "observation" :
     /priority|objective|focus/.test(text) ? "priority" : "query";
   const operation = body.trim();
-  if (/(?:^|\s)(?:sudo|pkexec|su|doas)(?:\s|$)|password|\/(?:etc|usr|opt)\/|\b(?:main|master)\b/i.test(operation)) return { id: randomUUID(), kind, operation, status: "denied", policyReason: "RaDio chat cannot request privileged commands, system writes, credentials, or direct main/master operations." };
-  return { id: randomUUID(), kind, operation, status: "proposed", policyReason: "Command must be evaluated against the active Orbit policy." };
+  const { intent } = classifyRadioIntent(operation);
+  const risk = kind === "staging" || kind === "install" || intent === "release"
+    ? "external_mutation"
+    : kind === "health" || intent === "query" || intent === "classify" || intent === "synthesize"
+      ? "read"
+      : "workspace_write";
+  const stopConditions = deterministicStopConditions(operation, risk);
+  if (stopConditions.includes("ambiguous_authority") || stopConditions.includes("target_mismatch")) {
+    return { id: randomUUID(), kind, operation, intent, risk, behaviorStates: ["understand", "blocked"], status: "denied", policyReason: "RaDio stopped because the request requires privileged authority, credentials, system writes, or a protected-branch operation." };
+  }
+  return { id: randomUUID(), kind, operation, intent, risk, behaviorStates: behaviorStates(intent, risk), status: "proposed", policyReason: "Command must be evaluated against the active Orbit policy." };
 }
 
 export function maintenanceRequiresSource(body: string) {
@@ -74,8 +84,8 @@ export function maintenanceUsesHostPreview(hasSource: boolean, body: string) {
 
 export function decideChatCommand(project: Project, command: RaDioChatCommand) {
   if (command.status === "denied") return command;
-  const external = command.kind === "staging" || command.kind === "install";
-  const decision = radioPolicyDecision({ settings: project.radio, risk: external ? "external_mutation" : command.kind === "query" || command.kind === "health" ? "read" : "workspace_write", operation: command.operation, branch: command.kind === "staging" ? "staging" : undefined, environment: command.kind === "install" ? "workspace" : undefined });
+  const risk = command.risk ?? (command.kind === "staging" || command.kind === "install" ? "external_mutation" : command.kind === "query" || command.kind === "health" ? "read" : "workspace_write");
+  const decision = radioPolicyDecision({ settings: project.radio, risk, operation: command.operation, branch: command.kind === "staging" ? "staging" : undefined, environment: command.kind === "install" ? "workspace" : undefined });
   return {
     ...command,
     status:

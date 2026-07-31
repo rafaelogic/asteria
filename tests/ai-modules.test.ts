@@ -4,6 +4,7 @@ import { DirectiveRegistry, ModelRouter, PromptComposer, parseDirective } from "
 import { loadDirectiveRegistry } from "../modules/shared/electron-directives";
 import { SPECIALIST_ROLES } from "../modules/stars/shared/catalog";
 import { providerStartArgs } from "../electron/providers";
+import { RadioModule } from "../modules/radio/electron/module";
 
 const directive = `---
 id: test-identity
@@ -29,7 +30,12 @@ I report results to RaDio.`;
 describe("Markdown directive registry", () => {
   it("loads complete developer-managed RaDio and Star directives", () => {
     const registry = loadDirectiveRegistry();
-    expect(registry.list("radio").map((item) => item.metadata.id)).toEqual(expect.arrayContaining(["asteria-safety", "radio-identity"]));
+    expect(registry.list("radio").map((item) => item.metadata.id)).toEqual(expect.arrayContaining([
+      "asteria-safety", "radio-identity", "radio-voice", "radio-planning", "radio-delegation",
+      "radio-execution", "radio-evidence", "radio-repair", "radio-verification",
+      "radio-authorization", "radio-release", "radio-handoff",
+    ]));
+    expect(registry.list("radio").find((item) => item.metadata.id === "radio-identity")?.metadata.modelTier).toBe("fast");
     for (const role of SPECIALIST_ROLES) {
       expect(registry.list("stars").some((item) => item.metadata.subject === role), role).toBe(true);
     }
@@ -39,8 +45,16 @@ describe("Markdown directive registry", () => {
     expect(() => parseDirective("no frontmatter")).toThrow(/frontmatter/);
     expect(() => parseDirective(directive.replace("balanced", "unbounded"))).toThrow(/unknown model tier/);
     expect(() => parseDirective(directive.replace("I am the QA Star", "You are RaDio"))).toThrow(/unsafe identity/);
+    const radioProviderIdentity = directive.replace("module: stars", "module: radio").replace("subject: qa", "subject: radio").replace("I am the QA Star for this Orbit.", "I am Codex.");
+    expect(() => parseDirective(radioProviderIdentity)).toThrow(/unsafe RaDio identity/);
     expect(() => new DirectiveRegistry([{ source: directive, name: "one" }, { source: directive.replace("1.0.0", "1.0.1"), name: "two" }])).toThrow(/Duplicate/);
     expect(() => parseDirective(directive.replace("## Handoff", "## Transfer"))).toThrow(/Handoff/);
+  });
+
+  it("rejects overlapping directives with conflicting priority metadata", () => {
+    const first = directive.replace("test-identity", "qa-one");
+    const second = directive.replace("test-identity", "qa-two");
+    expect(() => new DirectiveRegistry([{ source: first, name: "one" }, { source: second, name: "two" }])).toThrow(/Conflicting directive priority/);
   });
 
   it("composes prompts deterministically in policy-to-assignment order", () => {
@@ -58,6 +72,18 @@ describe("Markdown directive registry", () => {
 });
 
 describe("provider-neutral model routing", () => {
+  it("selects RaDio tiers from task directives instead of its stable identity", () => {
+    const registry = loadDirectiveRegistry();
+    const radio = new RadioModule({} as never, registry, new ModelRouter({
+      codex: { fast: "fast-model", balanced: "balanced-model", frontier: "frontier-model" },
+    }));
+    expect(radio.compose({ provider: "codex", task: "classification", context: "Orbit", assignment: "Classify" }).manifest.requestedTier).toBe("fast");
+    expect(radio.compose({ provider: "codex", task: "implementation", risk: "workspace_write", context: "Orbit", assignment: "Implement" }).manifest.requestedTier).toBe("balanced");
+    const protectedWork = radio.compose({ provider: "codex", task: "implementation", risk: "external_mutation", context: "Orbit", assignment: "Publish" });
+    expect(protectedWork.manifest.requestedTier).toBe("frontier");
+    expect(protectedWork.manifest.directiveIds).toContain("radio-authorization");
+  });
+
   it("uses role tiers and escalates protected or repeated-failure work", () => {
     const router = new ModelRouter();
     expect(router.route({ provider: "codex", task: "classification" }).requestedTier).toBe("fast");

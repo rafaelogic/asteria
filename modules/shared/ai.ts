@@ -80,6 +80,9 @@ export function parseDirective(source: string, sourceName = "inline"): Directive
   if (record.module === "stars" && /\b(?:You are RaDio|I am (?:Codex|Claude))\b/i.test(identity)) {
     throw new Error(`Directive ${sourceName} contains an unsafe identity claim.`);
   }
+  if (record.module === "radio" && /\bI am (?:Codex|Claude|a provider|an agent)\b/i.test(identity)) {
+    throw new Error(`Directive ${sourceName} contains an unsafe RaDio identity claim.`);
+  }
   return { metadata: record as unknown as DirectiveFrontmatter, body, source: sourceName };
 }
 
@@ -93,6 +96,18 @@ export class DirectiveRegistry {
       const key = directive.metadata.id;
       if (keys.has(key)) throw new Error(`Duplicate directive ${key}.`);
       keys.add(key);
+    }
+    for (let index = 0; index < parsed.length; index += 1) {
+      for (const other of parsed.slice(index + 1)) {
+        const current = parsed[index];
+        if (current.metadata.module !== other.metadata.module
+          || current.metadata.subject !== other.metadata.subject
+          || current.metadata.priority !== other.metadata.priority) continue;
+        const overlaps = current.metadata.coordinates.includes("*")
+          || other.metadata.coordinates.includes("*")
+          || current.metadata.coordinates.some((coordinate) => other.metadata.coordinates.includes(coordinate));
+        if (overlaps) throw new Error(`Conflicting directive priority for ${current.metadata.id} and ${other.metadata.id}.`);
+      }
     }
     this.directives = parsed.sort((left, right) => left.metadata.priority - right.metadata.priority || left.metadata.id.localeCompare(right.metadata.id));
   }
@@ -129,7 +144,7 @@ export class ModelRouter {
     role?: SpecialistRole;
     risk?: RiskClassification;
     explicitTier?: ModelTier;
-    task?: "synthesis" | "planning" | "implementation" | "verification" | "classification" | "release";
+    task?: "synthesis" | "planning" | "implementation" | "repair" | "verification" | "classification" | "release";
     repeatedFailures?: number;
     evidenceConflict?: boolean;
   }) {

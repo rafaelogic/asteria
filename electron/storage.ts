@@ -7,6 +7,7 @@ import type { ApplicationMaintenanceSettings, OnboardingDraft, Project, RaDioMem
 import { PRODUCTION_WORKFLOW, recommendedRoles, transitionWorkflow } from "../src/workflow.js";
 import { DEFAULT_RADIO_SETTINGS } from "../modules/radio/shared/core.js";
 import { emptyStarContinuity, normalizeStarContinuity, starForRole } from "../modules/stars/shared/catalog.js";
+import { emptyRadioContinuity, normalizeRadioContinuity } from "../modules/radio/shared/behavior.js";
 import { defaultTakeover } from "../modules/radio/electron/supervisor.js";
 import { ensurePrivateDirectory, ensurePrivateFile } from "./file-permissions.js";
 
@@ -231,6 +232,7 @@ export class ProjectRepository {
       ,skillExecutions: project.skillExecutions ?? [], incidents: project.incidents ?? [],
       takeover: project.takeover ?? defaultTakeover(project.id, project.runId, project.radio?.mode === "full_autonomous"),
       starContinuity: normalizeStarContinuity(project),
+      radioContinuity: normalizeRadioContinuity(project),
       aiExecutions: (project.aiExecutions ?? []).slice(0, 500),
       authorizationRequests: (project.authorizationRequests ?? []).slice(0, 500),
       authorizationGrants: (project.authorizationGrants ?? []).slice(0, 500),
@@ -261,6 +263,7 @@ export class ProjectRepository {
       visibility: draft.githubConnected ? "Private" : "Local",
       provider: draft.defaultProvider,
       starContinuity: emptyStarContinuity(id),
+      radioContinuity: emptyRadioContinuity({ id, objective: draft.idea }),
       aiExecutions: [],
       authorizationRequests: [],
       authorizationGrants: [],
@@ -335,7 +338,8 @@ export class ProjectRepository {
           specialist: stage?.specialist ?? "Human",
           files: transitioned.artifacts.map((artifact) => artifact.name).slice(0, 8),
           createdAt: new Date().toISOString(),
-          status: "pending"
+          status: "pending",
+          gateKind: "human_authorization"
         }]
       };
     }

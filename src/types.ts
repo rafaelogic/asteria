@@ -8,6 +8,9 @@ export type RunStatus = "queued" | "active" | "approval" | "paused" | "blocked" 
 export type StepStatus = "complete" | "active" | "pending" | "blocked" | "failed" | "skipped";
 export type BoardColumn = "Backlog" | "Ready" | "Running" | "Review" | "Blocked" | "Done";
 export type RiskClassification = "read" | "workspace_write" | "external_mutation" | "destructive";
+export type RadioIntent = "query" | "classify" | "plan" | "delegate" | "execute" | "repair" | "verify" | "synthesize" | "release";
+export type RadioBehaviorState = "understand" | "plan" | "preflight" | "authorize" | "activate" | "execute" | "verify" | "synthesize" | "checkpoint" | "blocked";
+export type StopCondition = "ambiguous_authority" | "target_mismatch" | "missing_capability" | "unavailable_tier" | "conflicting_evidence" | "repeated_failure" | "destructive_production";
 export type SkillSource = "builtin" | "orbit";
 export type SkillPermission = "filesystem_read" | "filesystem_write" | "command_execute" | "git_write" | "network_read" | "external_mutation" | "deployment" | "production";
 export type SkillCapability = "filesystem" | "command" | "git" | "github" | "provider" | "research" | "browser" | "packages" | "tests" | "deployment" | "observability" | "notifications" | "approvals";
@@ -46,6 +49,64 @@ export interface StarContinuity {
   openQuestions: string[];
   handoffSummary?: string;
   provider?: ProviderId;
+  updatedAt: string;
+}
+
+export interface EvidenceClaim {
+  id: string;
+  kind: "observed" | "inferred" | "proposed" | "verified";
+  statement: string;
+  evidenceIds: string[];
+  createdAt: string;
+}
+
+export interface DelegationContract {
+  id: string;
+  role: SpecialistRole;
+  assignment: string;
+  rationale: string;
+  requiredCapabilities: string[];
+  boundaries: string[];
+  expectedEvidence: string[];
+  returnConditions: string[];
+  independentVerifier?: SpecialistRole;
+}
+
+export interface ExecutionProposal {
+  id: string;
+  intent: RadioIntent;
+  operation: string;
+  risk: RiskClassification;
+  states: RadioBehaviorState[];
+  planningStyle: "immediate" | "concise_plan" | "authorization_required";
+  delegations: DelegationContract[];
+  stopConditions: StopCondition[];
+}
+
+export interface HumanAuthorizationGate {
+  id: string;
+  projectId: string;
+  runId: string;
+  approvalId: string;
+  kind: "human";
+  operation: string;
+  risk: RiskClassification;
+  focused: boolean;
+  oneTimeOnly: boolean;
+  createdAt: string;
+}
+
+export interface RadioContinuity {
+  projectId: string;
+  currentObjective: string;
+  behaviorState: RadioBehaviorState;
+  decisions: string[];
+  evidence: EvidenceClaim[];
+  unresolvedQuestions: string[];
+  activeConstellation: SpecialistRole[];
+  authorizationRequestIds: string[];
+  relayHistory: string[];
+  lastWaypointId?: string;
   updatedAt: string;
 }
 
@@ -154,6 +215,7 @@ export interface AiExecutionRecord {
   tokenUsage?: { input?: number; output?: number; total?: number };
   startedAt: string;
   completedAt?: string;
+  behaviorStates?: RadioBehaviorState[];
 }
 
 export interface ProviderAuthState {
@@ -347,7 +409,7 @@ export interface UserInstallState { currentVersion?: string; previousVersion?: s
 
 export interface RaDioChatReference { kind: "coordinate" | "incident" | "task" | "file" | "commit" | "observation" | "star"; id: string; label: string }
 export interface RaDioChatAttachment { id: string; name: string; path: string; mime: string; size: number; modifiedAt: string; digest: string; status: "ready" | "stale" | "missing" | "rejected" }
-export interface RaDioChatCommand { id: string; kind: "query" | "priority" | "task" | "takeover" | "star" | "health" | "build" | "install" | "staging" | "skill" | "observation"; operation: string; status: "proposed" | "allowed" | "approval" | "denied" | "running" | "completed" | "failed"; policyReason: string }
+export interface RaDioChatCommand { id: string; kind: "query" | "priority" | "task" | "takeover" | "star" | "health" | "build" | "install" | "staging" | "skill" | "observation"; operation: string; status: "proposed" | "allowed" | "approval" | "denied" | "running" | "completed" | "failed"; policyReason: string; intent?: RadioIntent; risk?: RiskClassification; behaviorStates?: RadioBehaviorState[] }
 export interface RaDioExecutionCard { id: string; kind: "tool" | "star" | "approval" | "check" | "waypoint" | "relay" | "staging" | "build" | "install" | "rollback"; title: string; detail: string; status: "queued" | "running" | "completed" | "failed" | "blocked"; createdAt: string; completedAt?: string }
 export interface RaDioPanelSummary { roles: SpecialistRole[]; recommendation: string; disagreements: string[]; evidenceIds: string[] }
 export interface RaDioChatMessage {
@@ -569,6 +631,7 @@ export interface Project {
   provider: ProviderId;
   roleProviders?: Partial<Record<SpecialistRole, ProviderId>>;
   starContinuity?: Partial<Record<SpecialistRole, StarContinuity>>;
+  radioContinuity?: RadioContinuity;
   aiExecutions?: AiExecutionRecord[];
   runId: string;
   runStatus: RunStatus;
@@ -668,6 +731,7 @@ export interface ApprovalRequest {
   expiresAt?: string;
   consumedAt?: string;
   decisionToken?: string;
+  gateKind?: "human_authorization" | "machine_checkpoint";
 }
 
 export interface GitHubConnection {
