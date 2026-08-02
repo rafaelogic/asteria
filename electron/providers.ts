@@ -233,11 +233,11 @@ export class ProviderManager extends EventEmitter {
     return { sessionId, pid: process.pid };
   }
 
-  start(provider: ProviderId, prompt: string, context: IsolationContext, options: { workspaceWrite?: boolean; model?: string } = {}) {
+  start(provider: ProviderId, prompt: string, context: IsolationContext, options: { workspaceWrite?: boolean; model?: string; forceExec?: boolean } = {}) {
     if (this.sessions.has(context.sessionId)) throw new Error("Session is already running.");
     const command = resolveProviderCommand(provider);
     if (!command) throw new Error(`${provider === "codex" ? "OpenAI Codex" : "Claude Code"} CLI could not be resolved.`);
-    if (provider === "codex" && os.platform() !== "win32") return this.startCodexAppServer(command, prompt, context, options);
+    if (provider === "codex" && os.platform() !== "win32" && !options.forceExec) return this.startCodexAppServer(command, prompt, context, options);
     const shell = os.platform() === "win32" ? "powershell.exe" : command;
     const providerArgs = providerStartArgs(provider, prompt, options);
     const modelFlag = options.model && options.model !== "provider-configured-default" ? ` --model '${options.model.replaceAll("'", "''")}'` : "";

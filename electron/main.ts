@@ -15,7 +15,7 @@ import {
   WorktreeSchema, ProviderAccountAddSchema, ProviderAccountUpdateSchema, RaDioSettingsMutationSchema, MutationSchema,
   RaDioIdeaMutationSchema, RaDioHandoffSchema, SkillConfigureSchema, SkillCancelSchema, MemoryAddSchema, MemoryForgetSchema,
   TakeoverControlSchema, ChatSendSchema, ChatCancelSchema, HealthSignalSchema,
-  MaintenanceSendSchema, MaintenanceCancelSchema, MaintenanceSourceSchema, MaintenanceMutationSchema,
+  MaintenanceSendSchema, MaintenanceImprovePromptSchema, MaintenanceCancelSchema, MaintenanceSourceSchema, MaintenanceMutationSchema,
   MaintenanceControlSchema, MaintenanceGoalSchema, MaintenancePanelSchema, AuthorizationDecisionSchema, AuthorizationRevokeSchema
 } from "./contracts.js";
 import { checkpoint, cleanupTaskWorktree, cloneRepository, createTaskWorktree, promoteFastForwardToStaging, repositoryStatus } from "./git.js";
@@ -241,9 +241,9 @@ app.whenReady().then(async () => {
     const directives = loadDirectiveRegistry(path.join(app.getAppPath(), "modules"));
     const modelRouter = new ModelRouter({
       codex: {
-        fast: process.env.ASTERIA_CODEX_FAST_MODEL,
-        balanced: process.env.ASTERIA_CODEX_BALANCED_MODEL,
-        frontier: process.env.ASTERIA_CODEX_FRONTIER_MODEL,
+        fast: "gpt-5.6-sol",
+        balanced: "gpt-5.6-sol",
+        frontier: "gpt-5.6-sol",
       },
       claude: {
         fast: process.env.ASTERIA_CLAUDE_FAST_MODEL,
@@ -602,7 +602,9 @@ async function runMaintenanceInspection(trigger: "startup" | "schedule" | "manua
       lastCycleAt: nowIso,
       nextCycleAt: new Date(now.getTime() + current.automation.intervalMinutes * 60_000).toISOString(),
       lastFeatureDate,
-      idleStatus: idleStatuses[Math.floor(now.getMinutes() / 10) % idleStatuses.length]
+      idleStatus: trigger === "manual" && !active
+        ? "Inspection complete — no maintenance work required"
+        : idleStatuses[Math.floor(now.getMinutes() / 10) % idleStatuses.length]
     }
   }, current.version, `maintenance_cycle_${trigger}_${now.getTime()}`);
   window?.webContents.send("maintenance:updated", updated);
@@ -1553,6 +1555,38 @@ ipcMain.handle("radio-chat:cancel", (_event, raw) => {
   return store.projects.save({ ...project, radioChats: chats }, input.expectedVersion, input.idempotencyKey);
 });
 ipcMain.handle("maintenance:state", () => store.maintenance.get());
+ipcMain.handle("maintenance:improve-prompt", async (_event, raw) => {
+  const input = MaintenanceImprovePromptSchema.parse(raw);
+  const sessionId = `prompt_improve_${randomUUID()}`;
+  const workspace = path.join(app.getPath("userData"), "maintenance-radio", "workspace");
+  await mkdir(workspace, { recursive: true, mode: 0o700 });
+  const context = await createIsolationContext(app.getPath("userData"), sessionId, workspace, "codex");
+  const prompt = `Rewrite the owner's maintenance prompt for clarity and execution. Preserve intent, scope, constraints, and safety boundaries. Add concise success criteria when useful. Return only the improved prompt, with no preamble or markdown fencing.\n\nOwner prompt:\n${redactSecrets(input.body)}`;
+  return await new Promise<string>((resolve, reject) => {
+    const messages: string[] = [];
+    const listener = (eventSessionId: string, event: { type: string; detail: string }) => {
+      if (eventSessionId !== sessionId) return;
+      if (event.type === "message" && event.detail.trim()) messages.push(event.detail.trim());
+      if (event.type !== "completed" && event.type !== "error") return;
+      clearTimeout(timeout);
+      providers.off("event", listener);
+      if (event.type === "error" || !messages.length) reject(new Error(event.detail || "Codex did not return an improved prompt."));
+      else resolve(messages.join("").trim());
+    };
+    const timeout = setTimeout(() => {
+      providers.cancel(sessionId);
+      providers.off("event", listener);
+      reject(new Error("Codex prompt enhancement timed out."));
+    }, 30_000);
+    providers.on("event", listener);
+    try { providers.start("codex", prompt, context, { model: "gpt-5.6-luna", forceExec: true }); }
+    catch (error) {
+      clearTimeout(timeout);
+      providers.off("event", listener);
+      reject(error);
+    }
+  });
+});
 ipcMain.handle("maintenance:control", async (_event, raw) => {
   const input = MaintenanceControlSchema.parse(raw);
   const current = store.maintenance.get();

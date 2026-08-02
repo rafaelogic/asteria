@@ -884,6 +884,7 @@ export interface AsteriaApi {
   };
   maintenance: {
     state(): Promise<ApplicationMaintenanceSettings>;
+    improvePrompt(input: { body: string }): Promise<string>;
     send(input: { expectedVersion: number; idempotencyKey: string; operationId: string; body: string }): Promise<ApplicationMaintenanceSettings>;
     cancel(input: { expectedVersion: number; idempotencyKey: string; messageId: string }): Promise<ApplicationMaintenanceSettings>;
     selectSource(input: { expectedVersion: number; idempotencyKey: string; operationId: string; source: "folder" | "orbit"; projectId?: string }): Promise<ApplicationMaintenanceSettings>;

@@ -22,6 +22,14 @@ describe("Maintenance RaDio context", () => {
     expect(screen).toContain('data-vibe={vibeState}');
     expect(screen).toContain('className="neural-ai-atmosphere"');
   });
+  it("keeps prompt submission available and routes enhancement through efficient Codex", () => {
+    const screen = readFileSync("src/screens/MaintenanceRadioScreen.tsx", "utf8");
+    const main = readFileSync("electron/main.ts", "utf8");
+    expect(screen).not.toContain("!body.trim() || !readiness.ready || isStreaming");
+    expect(screen).toContain("maintenance.improvePrompt");
+    expect(main).toContain('model: "gpt-5.6-luna"');
+    expect(main.match(/gpt-5\.6-sol/g)?.length).toBeGreaterThanOrEqual(3);
+  });
   it("routes visual verification through the trusted host preview", () => {
     for (const request of ["verify the visual preview", "check the UI layout", "take a browser screenshot"]) {
       expect(maintenanceRequiresPreview(request)).toBe(true);

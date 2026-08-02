@@ -14,5 +14,6 @@ process.stdout.write(JSON.stringify({ type: "reasoning", content: "Inspecting ap
 process.stdout.write(JSON.stringify({ type: "tool_start", content: "fixture-tool" }) + "\n");
 if (malformed) process.stdout.write('{"type":\n');
 process.stdout.write(JSON.stringify({ type: "tool_result", content: "Fixture evidence generated; token sk-proj-secret-redacted" }) + "\n");
+process.stdout.write(JSON.stringify({ type: "message", content: "Improved maintenance prompt with clear verification criteria." }) + "\n");
 process.stdout.write(JSON.stringify({ type: "usage", content: "100 input, 40 output" }) + "\n");
 process.exit(crash ? 17 : 0);

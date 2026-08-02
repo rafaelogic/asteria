@@ -98,6 +98,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
   const [body, setBody] = useState("");
   const [selectedOrbit, setSelectedOrbit] = useState("");
   const [error, setError] = useState("");
+  const [improvingPrompt, setImprovingPrompt] = useState(false);
   const [clock, setClock] = useState(Date.now());
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const stageRef = useRef<HTMLElement>(null);
@@ -225,7 +226,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
     setState(await window.asteria.maintenance.goal({ expectedVersion: state.version, idempotencyKey: `goal_${crypto.randomUUID()}`, goalId, action }));
   };
   const send = async () => {
-    if (!window.asteria || !state || !body.trim() || !readiness.ready) return;
+    if (!window.asteria || !state || !body.trim()) return;
     resumeAutoScroll(); setError("");
     const submitted = body;
     try {
@@ -233,6 +234,13 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
       setState(await window.asteria.maintenance.send({ expectedVersion: latest.version, idempotencyKey: `maintenance_${crypto.randomUUID()}`, operationId: crypto.randomUUID(), body: submitted }));
       setBody("");
     } catch (value) { setError(value instanceof Error ? value.message : "RaDio could not send this prompt."); }
+  };
+  const improvePrompt = async () => {
+    if (!window.asteria || !body.trim() || improvingPrompt) return;
+    setImprovingPrompt(true); setError("");
+    try { setBody(await window.asteria.maintenance.improvePrompt({ body })); }
+    catch (value) { setError(value instanceof Error ? value.message : "Codex could not improve this prompt."); }
+    finally { setImprovingPrompt(false); }
   };
   const selectSource = async (source: "folder" | "orbit") => {
     if (!window.asteria || !state?.pendingOperation) return;
@@ -311,7 +319,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
         <div className="neural-messages" ref={messagesRef} onScroll={handleMessagesScroll}>{state?.chat.messages.map((message) => <article key={message.id} className={message.author}><span>{message.author === "radio" ? <RobotIcon /> : "You"}</span><div className="neural-message-content"><header><strong>{message.author === "radio" ? "RaDio" : "You"}</strong><small>{message.status.replaceAll("_", " ")}</small></header>{message.body && <MaintenanceMarkdown content={message.body} fallbackLabel="Showing plain response" />}{message.status === "streaming" && <><ResponseActivity hasContent={Boolean(message.body)} /><button className="text-button" onClick={() => state && void window.asteria?.maintenance.cancel({ expectedVersion: state.version, idempotencyKey: `cancel_${crypto.randomUUID()}`, messageId: message.id })}><StopCircleIcon /> Stop</button></>}{message.status === "waiting_for_source" && <div className="source-required-card"><FolderOpenIcon /><div><strong>Asteria source required</strong><p>Changes run only in an isolated internal worktree.</p><button className="button primary" onClick={() => void selectSource("folder")}>Choose Asteria repository</button>{localOrbits.length > 0 && <div className="source-orbit-row"><select value={selectedOrbit} onChange={(event) => setSelectedOrbit(event.target.value)}><option value="">Choose local Orbit…</option>{localOrbits.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><button disabled={!selectedOrbit} onClick={() => void selectSource("orbit")}>Use Orbit</button></div>}</div></div>}</div></article>)}</div>
         {hasNewMessages && <button className="jump-to-latest" onClick={resumeAutoScroll}><ArrowUpIcon /> Latest message</button>}
         {error && <p className="radio-send-error" role="alert">{error}</p>}
-        <footer><textarea ref={promptRef} aria-label="Maintenance prompt" value={body} onChange={(event) => setBody(event.target.value)} placeholder={readiness.ready ? "Ask, diagnose, or create a durable maintenance goal…" : "Provider unavailable; local inspection remains available"} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button className="icon-control improve" aria-label="Improve prompt" title="Improve prompt locally" onClick={() => setBody(improveMaintenancePrompt(body))}><MagicWandIcon /></button><button className="send-control" aria-label="Send prompt" disabled={!body.trim() || !readiness.ready || isStreaming} onClick={() => void send()}><ArrowUpIcon /></button></footer>
+        <footer><textarea ref={promptRef} aria-label="Maintenance prompt" value={body} onChange={(event) => setBody(event.target.value)} placeholder="Ask, diagnose, or create a durable maintenance goal…" onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button className="icon-control improve" aria-label={improvingPrompt ? "Improving prompt with Codex" : "Improve prompt with Codex"} title="Improve prompt with fast Codex" disabled={improvingPrompt || !body.trim()} onClick={() => void improvePrompt()}><MagicWandIcon /></button><button className="send-control" aria-label="Send prompt" disabled={!body.trim() || isStreaming} onClick={() => void send()}><ArrowUpIcon /></button></footer>
       </motion.div>}</AnimatePresence>
     </motion.section>
   </div>;

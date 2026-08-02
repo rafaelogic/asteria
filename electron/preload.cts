@@ -48,6 +48,7 @@ const api: AsteriaApi = {
   },
   maintenance: {
     state: () => ipcRenderer.invoke("maintenance:state"),
+    improvePrompt: (input) => ipcRenderer.invoke("maintenance:improve-prompt", input),
     send: (input) => ipcRenderer.invoke("maintenance:send", input),
     cancel: (input) => ipcRenderer.invoke("maintenance:cancel", input),
     selectSource: (input) => ipcRenderer.invoke("maintenance:select-source", input),

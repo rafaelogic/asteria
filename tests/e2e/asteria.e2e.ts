@@ -64,6 +64,14 @@ test("maintenance RaDio opens before any Starpath exists", async () => {
   expect(panelBox && coreBox && panelBox.x > coreBox.x + coreBox.width).toBeTruthy();
   await page.getByRole("button", { name: /Close Activity/ }).click();
   await expect(page.getByRole("button", { name: "Inspect now" })).toBeVisible();
+  await expect(page.getByText("Inspection complete — no maintenance work required").first()).toBeVisible();
+  await page.getByRole("button", { name: /Ask RaDio about Asteria maintenance/ }).click();
+  const prompt = page.getByRole("textbox", { name: "Maintenance prompt" });
+  await prompt.fill("check application health");
+  await page.getByRole("button", { name: "Improve prompt with Codex" }).click();
+  await expect(prompt).toHaveValue("Improved maintenance prompt with clear verification criteria.");
+  await page.getByRole("button", { name: "Send prompt" }).click();
+  await expect(page.getByText("Improved maintenance prompt with clear verification criteria.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: /All projects/i }).click();
   await expect(page.getByRole("heading", { name: "Prepare your Starpath" })).toBeVisible();
 });

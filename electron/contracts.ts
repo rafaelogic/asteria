@@ -162,6 +162,7 @@ export const MaintenanceSendSchema = MaintenanceMutationSchema.extend({
   operationId: z.string().uuid(),
   body: z.string().min(1).max(20_000)
 });
+export const MaintenanceImprovePromptSchema = z.object({ body: z.string().min(1).max(20_000) });
 export const MaintenanceCancelSchema = MaintenanceMutationSchema.extend({ messageId: z.string().uuid() });
 export const MaintenanceSourceSchema = MaintenanceMutationSchema.extend({
   operationId: z.string().uuid(),
