@@ -54,6 +54,7 @@ test("maintenance RaDio opens before any Starpath exists", async () => {
   const coreBox = await page.locator(".neural-core-readout").boundingBox();
   const transportBox = await page.locator(".neural-command-status").boundingBox();
   expect(coreBox && transportBox && Math.abs((coreBox.x + coreBox.width / 2) - (transportBox.x + transportBox.width / 2)) < 2).toBeTruthy();
+  expect(coreBox && transportBox && transportBox.x >= coreBox.x && transportBox.x + transportBox.width <= coreBox.x + coreBox.width && transportBox.y >= coreBox.y && transportBox.y + transportBox.height <= coreBox.y + coreBox.height).toBeTruthy();
   for (const control of await page.locator(".radial-controls button").all()) {
     const controlBox = await control.boundingBox();
     expect(controlBox && coreBox && (controlBox.x + controlBox.width < coreBox.x || controlBox.x > coreBox.x + coreBox.width || controlBox.y + controlBox.height < coreBox.y || controlBox.y > coreBox.y + coreBox.height)).toBeTruthy();
