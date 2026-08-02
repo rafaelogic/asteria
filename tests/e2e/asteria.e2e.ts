@@ -43,6 +43,10 @@ test("maintenance RaDio opens before any Starpath exists", async () => {
   await expect(page.getByRole("heading", { name: "Prepare your Starpath" })).toBeVisible();
   await page.getByRole("button", { name: "Maintenance RaDio" }).click();
   await expect(page.getByRole("heading", { name: "Neural Console" })).toBeVisible();
+  const activation = page.getByRole("button", { name: /Activate|Inspect now/ });
+  await expect(activation).toBeVisible();
+  await activation.click();
+  await expect(page.getByRole("button", { name: "Inspect now" })).toBeVisible();
   await page.getByRole("button", { name: /All projects/i }).click();
   await expect(page.getByRole("heading", { name: "Prepare your Starpath" })).toBeVisible();
 });

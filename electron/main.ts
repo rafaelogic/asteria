@@ -555,10 +555,15 @@ function validationEvidenceSummary(evidence: HostValidationEvidence) {
 const idleStatuses = ["Waiting for the next cycle", "Reviewing the goal queue", "Monitoring local application health"];
 
 async function runMaintenanceInspection(trigger: "startup" | "schedule" | "manual") {
-  const current = store.maintenance.get();
+  let current = store.maintenance.get();
   if (!current.automation.enabled || current.automation.paused || current.automation.emergencyStopped || current.automation.cycleRunning) return current;
   const now = new Date();
   const nowIso = now.toISOString();
+  current = store.maintenance.save({
+    ...current,
+    automation: { ...current.automation, cycleRunning: true, status: "inspecting", idleStatus: trigger === "startup" ? "Running startup inspection" : "Inspecting local application health" }
+  }, current.version, `maintenance_cycle_started_${trigger}_${now.getTime()}`);
+  window?.webContents.send("maintenance:updated", current);
   const today = nowIso.slice(0, 10);
   const projects = store.projects.list();
   const openIncidents = projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved").map((incident) => ({ project, incident })));
