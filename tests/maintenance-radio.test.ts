@@ -15,6 +15,11 @@ describe("Maintenance RaDio context", () => {
     expect(screen).toContain('state?.automation.lastCycleAt ? "Inspect now" : "Activate"');
     expect(screen).not.toContain('disabled={!state?.source || state?.automation.cycleRunning}');
   });
+  it("maps operational state to a stable animated atmosphere", () => {
+    const screen = readFileSync("src/screens/MaintenanceRadioScreen.tsx", "utf8");
+    expect(screen).toContain("status-${visualState}");
+    expect(screen).toContain('className="neural-ai-atmosphere"');
+  });
   it("routes visual verification through the trusted host preview", () => {
     for (const request of ["verify the visual preview", "check the UI layout", "take a browser screenshot"]) {
       expect(maintenanceRequiresPreview(request)).toBe(true);

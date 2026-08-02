@@ -109,6 +109,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
   const localOrbits = projects.filter((project) => project.repositoryPath);
   const isStreaming = state?.chat.messages.some((message) => message.status === "streaming") ?? false;
   const operationalState = state?.automation.status ?? "idle";
+  const visualState = state?.automation.emergencyStopped ? "stopped" : state?.automation.paused ? "paused" : operationalState;
   const isWorking = isStreaming || ["inspecting", "implementing", "verifying", "staging", "installing", "relaunching"].includes(operationalState);
   const latestCard = state?.chat.messages.flatMap((message) => message.cards).at(-1);
   const activityStartedAt = activeGoal?.updatedAt ? new Date(activeGoal.updatedAt).getTime() : clock;
@@ -232,7 +233,8 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
   const nextCycle = state?.automation.nextCycleAt ? new Date(state.automation.nextCycleAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "after startup";
   const theme = panel ?? "idle";
 
-  return <div className={`neural-console theme-${theme}${isWorking ? " has-active-work" : ""}${hasIssue ? " has-issue" : ""}`}>
+  return <div className={`neural-console theme-${theme} status-${visualState}${isWorking ? " has-active-work" : ""}${hasIssue ? " has-issue" : ""}`}>
+    <div className="neural-ai-atmosphere" aria-hidden="true"><i /><i /><i /><span /><span /></div>
     <header className="neural-topbar">
       <Brand />
       <div className="neural-state"><span><small>Next cycle</small><strong>{nextCycle}</strong></span></div>

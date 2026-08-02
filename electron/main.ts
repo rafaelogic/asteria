@@ -564,6 +564,7 @@ async function runMaintenanceInspection(trigger: "startup" | "schedule" | "manua
     automation: { ...current.automation, cycleRunning: true, status: "inspecting", idleStatus: trigger === "startup" ? "Running startup inspection" : "Inspecting local application health" }
   }, current.version, `maintenance_cycle_started_${trigger}_${now.getTime()}`);
   window?.webContents.send("maintenance:updated", current);
+  await new Promise((resolve) => setTimeout(resolve, trigger === "startup" ? 700 : 1_100));
   const today = nowIso.slice(0, 10);
   const projects = store.projects.list();
   const openIncidents = projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved").map((incident) => ({ project, incident })));
