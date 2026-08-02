@@ -565,6 +565,9 @@ async function runMaintenanceInspection(trigger: "startup" | "schedule" | "manua
   }, current.version, `maintenance_cycle_started_${trigger}_${now.getTime()}`);
   window?.webContents.send("maintenance:updated", current);
   await new Promise((resolve) => setTimeout(resolve, trigger === "startup" ? 700 : 1_100));
+  // Rebase the inspection result over harmless UI state changes (for example,
+  // opening a Neural Console section while the cycle is running).
+  current = store.maintenance.get();
   const today = nowIso.slice(0, 10);
   const projects = store.projects.list();
   const openIncidents = projects.flatMap((project) => project.incidents.filter((incident) => incident.status !== "resolved").map((incident) => ({ project, incident })));

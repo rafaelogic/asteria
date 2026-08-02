@@ -52,10 +52,16 @@ test("maintenance RaDio opens before any Starpath exists", async () => {
   const controlsDuring = await page.locator(".radial-controls button").evaluateAll((buttons) => buttons.map((button) => { const box = button.getBoundingClientRect(); return { x: box.x, y: box.y }; }));
   expect(controlsDuring).toEqual(controlsBefore);
   const coreBox = await page.locator(".neural-core-readout").boundingBox();
+  const transportBox = await page.locator(".neural-command-status").boundingBox();
+  expect(coreBox && transportBox && Math.abs((coreBox.x + coreBox.width / 2) - (transportBox.x + transportBox.width / 2)) < 2).toBeTruthy();
   for (const control of await page.locator(".radial-controls button").all()) {
     const controlBox = await control.boundingBox();
     expect(controlBox && coreBox && (controlBox.x + controlBox.width < coreBox.x || controlBox.x > coreBox.x + coreBox.width || controlBox.y + controlBox.height < coreBox.y || controlBox.y > coreBox.y + coreBox.height)).toBeTruthy();
   }
+  await page.getByRole("button", { name: /Open Activity/ }).click();
+  const panelBox = await page.locator(".neural-expansion").boundingBox();
+  expect(panelBox && coreBox && panelBox.x > coreBox.x + coreBox.width).toBeTruthy();
+  await page.getByRole("button", { name: /Close Activity/ }).click();
   await expect(page.getByRole("button", { name: "Inspect now" })).toBeVisible();
   await page.getByRole("button", { name: /All projects/i }).click();
   await expect(page.getByRole("heading", { name: "Prepare your Starpath" })).toBeVisible();

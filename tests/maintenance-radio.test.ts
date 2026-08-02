@@ -18,6 +18,8 @@ describe("Maintenance RaDio context", () => {
   it("maps operational state to a stable animated atmosphere", () => {
     const screen = readFileSync("src/screens/MaintenanceRadioScreen.tsx", "utf8");
     expect(screen).toContain("status-${visualState}");
+    expect(screen).toContain("vibe-${vibeState}");
+    expect(screen).toContain('data-vibe={vibeState}');
     expect(screen).toContain('className="neural-ai-atmosphere"');
   });
   it("routes visual verification through the trusted host preview", () => {

@@ -111,6 +111,13 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
   const operationalState = state?.automation.status ?? "idle";
   const visualState = state?.automation.emergencyStopped ? "stopped" : state?.automation.paused ? "paused" : operationalState;
   const isWorking = isStreaming || ["inspecting", "implementing", "verifying", "staging", "installing", "relaunching"].includes(operationalState);
+  const vibeState = state?.automation.emergencyStopped || ["stopped", "failed", "blocked"].includes(operationalState)
+    ? "stopped"
+    : state?.automation.paused
+      ? "paused"
+      : isWorking
+        ? "running"
+        : "idle";
   const latestCard = state?.chat.messages.flatMap((message) => message.cards).at(-1);
   const activityStartedAt = activeGoal?.updatedAt ? new Date(activeGoal.updatedAt).getTime() : clock;
   const elapsedSeconds = Math.max(0, Math.floor((clock - activityStartedAt) / 1000));
@@ -186,12 +193,13 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
 
   const choosePanel = async (next?: MaintenancePanel, push = true) => {
     setPanel(next);
-    setSelectedNode(next ? 0 : undefined);
+    setSelectedNode(undefined);
     if (push) window.history.pushState({ ...(window.history.state ?? {}), radioPanel: next }, "");
     if (window.asteria && state) {
       try {
         const latest = await window.asteria.maintenance.state();
-        setState(await window.asteria.maintenance.selectPanel({ expectedVersion: latest.version, idempotencyKey: `panel_${crypto.randomUUID()}`, panel: next }));
+        const selected = await window.asteria.maintenance.selectPanel({ expectedVersion: latest.version, idempotencyKey: `panel_${crypto.randomUUID()}`, panel: next });
+        setState((current) => !current || selected.version >= current.version ? selected : current);
       } catch (value) {
         setError(value instanceof Error ? value.message : `The ${next ?? "console"} panel could not be opened.`);
       }
@@ -233,18 +241,11 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
   const nextCycle = state?.automation.nextCycleAt ? new Date(state.automation.nextCycleAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "after startup";
   const theme = panel ?? "idle";
 
-  return <div className={`neural-console theme-${theme} status-${visualState}${isWorking ? " has-active-work" : ""}${hasIssue ? " has-issue" : ""}`}>
-    <div className="neural-ai-atmosphere" aria-hidden="true"><i /><i /><i /><span /><span /></div>
+  return <div className={`neural-console theme-${theme} status-${visualState} vibe-${vibeState}${isWorking ? " has-active-work" : ""}${hasIssue ? " has-issue" : ""}`}>
+    <div className="neural-ai-atmosphere" data-vibe={vibeState} aria-hidden="true"><i /><i /><i /><span /><span /></div>
     <header className="neural-topbar">
       <Brand />
       <div className="neural-state"><span><small>Next cycle</small><strong>{nextCycle}</strong></span></div>
-      <div className="neural-command-status" role="status" aria-label={`RaDio ${operationalState}`}>
-        {(state?.automation.paused || state?.automation.emergencyStopped) && <CoffeeIcon weight="duotone" aria-label="RaDio is paused" />}
-        <i /><span><small>RaDio core</small><strong>{state?.automation.emergencyStopped ? "Stopped" : state?.automation.paused ? "Paused" : operationalState}</strong></span>
-        {!isWorking && !state?.automation.paused && !state?.automation.emergencyStopped && <button className="neural-activate-control" disabled={!state || state.automation.cycleRunning} onClick={() => void control("run")}><PlayIcon /> {state?.automation.lastCycleAt ? "Inspect now" : "Activate"}</button>}
-        <button className="icon-control" aria-label={state?.automation.paused ? "Resume automation" : "Pause automation"} title={state?.automation.paused ? "Resume automation" : "Pause automation"} onClick={() => void control(state?.automation.paused ? "resume" : "pause")}>{state?.automation.paused ? <PlayIcon /> : <PauseIcon />}</button>
-        <button className="icon-control danger" aria-label="Emergency stop" title="Emergency stop" onClick={() => void control("emergency-stop")}><StopCircleIcon /></button>
-      </div>
       <div className="version-chip"><small>Installed / source</small><strong>{install.currentVersion ?? "dev"} / {state?.source?.version ?? "not selected"}</strong></div>
       <div className="neural-top-actions"><button className="button secondary" onClick={onReturn}><ArrowLeftIcon /> All projects</button></div>
     </header>
@@ -265,6 +266,15 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
         <div className="neural-telemetry-grid"><Metric label="Relay" value={readiness.ready ? `${state?.provider ?? "Codex"} ready` : "Unavailable"} /><Metric label="Findings" value={`${state?.findings.length ?? 0} open`} /><Metric label="Cycle" value={state?.automation.cycleRunning ? "Running" : nextCycle} /><Metric label="Install" value={install.currentVersion ?? "dev"} /></div>
       </aside>}
       <NeuralBrain state={state} theme={theme} target={operationalTarget} />
+      <div className="neural-command-status" role="status" aria-label={`RaDio ${operationalState}`}>
+        {(state?.automation.paused || state?.automation.emergencyStopped) && <CoffeeIcon weight="duotone" aria-label="RaDio is paused" />}
+        <i /><span><small>RaDio core</small><strong>{state?.automation.emergencyStopped ? "Stopped" : state?.automation.paused ? "Paused" : operationalState}</strong></span>
+        <div className="neural-transport-controls" aria-label="RaDio controls">
+          <button className="neural-activate-control" disabled={!state || isWorking || state.automation.cycleRunning || state.automation.paused || state.automation.emergencyStopped} onClick={() => void control("run")}><PlayIcon /><span>{isWorking ? "Running" : state?.automation.lastCycleAt ? "Inspect now" : "Activate"}</span></button>
+          <button className="icon-control" aria-label={state?.automation.paused ? "Resume automation" : "Pause automation"} title={state?.automation.paused ? "Resume automation" : "Pause automation"} onClick={() => void control(state?.automation.paused ? "resume" : "pause")}>{state?.automation.paused ? <PlayIcon /> : <PauseIcon />}<span>{state?.automation.paused ? "Resume" : "Pause"}</span></button>
+          <button className="icon-control danger" aria-label="Emergency stop" title="Emergency stop" onClick={() => void control("emergency-stop")}><StopCircleIcon /><span>Stop</span></button>
+        </div>
+      </div>
       {connectors && <svg className="neural-command-links" viewBox={`0 0 ${connectors.width} ${connectors.height}`} aria-hidden="true">
         <g className="core-section-links">{panels.map(({ id }) => <path key={id} className={`link-${id}`} d={neuralConnectorPath(connectors.core, connectors.controls[id])} />)}</g>
         {panel && connectors.panel && <path className={`command-bay-link link-${panel}`} d={neuralConnectorPath(connectors.controls[panel], connectors.panel)} />}
@@ -284,7 +294,7 @@ export function MaintenanceRadioScreen({ projects, onReturn }: { projects: Proje
           <span className="radial-control-face"><span className="radial-control-icon"><Icon weight={selected || operational ? "fill" : "duotone"} /></span><span className="radial-control-label">{label}</span><i className="radial-active-marker" aria-hidden="true" /></span>
         </button>;
       })}</nav>
-      <AnimatePresence mode="wait">{panel && <motion.section ref={expansionRef} key={panel} className={`neural-expansion expansion-${panel}`} aria-label={`${panels.find((item) => item.id === panel)?.label} neural network`} initial={{ opacity: 0, x: 28, scale: .96 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, x: 18, scale: .97 }} transition={{ type: "spring", stiffness: 260, damping: 25 }}>
+      <AnimatePresence mode="wait">{panel && <motion.section ref={expansionRef} key={panel} className={`neural-expansion expansion-${panel}`} aria-label={`${panels.find((item) => item.id === panel)?.label} neural network`} initial={{ opacity: 0, x: 24, scale: .98 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, x: 14, scale: .99 }} transition={{ duration: .24, ease: [0.22, 1, 0.36, 1] }}>
         <svg className="neural-expansion-links" viewBox="0 0 420 250" aria-hidden="true"><path d="M38 125 C118 125 116 42 210 42 M38 125 C120 125 126 125 210 125 M38 125 C118 125 116 208 210 208" /></svg>
         <div className="neural-expansion-origin"><BrainIcon weight="duotone" /><span>{panels.find((item) => item.id === panel)?.label}</span></div>
         <div className="neural-expansion-nodes">{neuralNodes[panel].map((node, index) => <button key={node.label} className={selectedNode === index ? "selected" : ""} onClick={() => setSelectedNode(index)} aria-label={`Inspect ${node.label}`}><i /><span><strong>{node.label}</strong><small>{node.detail}</small></span></button>)}</div>
