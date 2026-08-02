@@ -51,6 +51,11 @@ test("maintenance RaDio opens before any Starpath exists", async () => {
   await expect(page.locator(".neural-ai-atmosphere")).toBeVisible();
   const controlsDuring = await page.locator(".radial-controls button").evaluateAll((buttons) => buttons.map((button) => { const box = button.getBoundingClientRect(); return { x: box.x, y: box.y }; }));
   expect(controlsDuring).toEqual(controlsBefore);
+  const coreBox = await page.locator(".neural-core-readout").boundingBox();
+  for (const control of await page.locator(".radial-controls button").all()) {
+    const controlBox = await control.boundingBox();
+    expect(controlBox && coreBox && (controlBox.x + controlBox.width < coreBox.x || controlBox.x > coreBox.x + coreBox.width || controlBox.y + controlBox.height < coreBox.y || controlBox.y > coreBox.y + coreBox.height)).toBeTruthy();
+  }
   await expect(page.getByRole("button", { name: "Inspect now" })).toBeVisible();
   await page.getByRole("button", { name: /All projects/i }).click();
   await expect(page.getByRole("heading", { name: "Prepare your Starpath" })).toBeVisible();

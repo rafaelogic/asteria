@@ -23,8 +23,8 @@ const panels: Array<{ id: MaintenancePanel; label: string; icon: typeof TargetIc
 ];
 
 const radialPositions: Record<MaintenancePanel, { x: string; y: string }> = {
-  goals: { x: "32%", y: "55%" }, activity: { x: "46%", y: "24%" }, findings: { x: "64%", y: "39%" },
-  staging: { x: "64%", y: "68%" }, automation: { x: "46%", y: "79%" },
+  goals: { x: "26%", y: "46%" }, activity: { x: "42%", y: "18%" }, findings: { x: "74%", y: "34%" },
+  staging: { x: "74%", y: "66%" }, automation: { x: "42%", y: "83%" },
 };
 
 const neuralNodes: Record<MaintenancePanel, Array<{ label: string; detail: string }>> = {
